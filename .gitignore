@@ -2,3 +2,12 @@ __pycache__/
 *.pyc
 .pio/
 exports/
+.claude/
+esp32-display/*_log*.txt
+esp32-display/*_check*.txt
+esp32-display/*_capture*.txt
+esp32-display/boot_*.txt
+esp32-display/screen_off*.txt
+esp32-display/pin25_test_log.txt
+esp32-display/button_test_log.txt
+esp32-display/power_cycle_log.txt

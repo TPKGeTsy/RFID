@@ -1,9 +1,8 @@
 #include <arpa/inet.h>
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/rfcomm.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <netinet/in.h>
+#include <sys/mman.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <termios.h>
@@ -33,12 +32,15 @@ constexpr int Port = 80;
 constexpr int ReceiverCount = 4;
 constexpr const char* NetplanFile = "/etc/netplan/50-cloud-init.yaml";
 constexpr std::array<const char*, 3> SerialDevices{"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyACM0"};
-// The ESP32 runs as the Bluetooth SPP server; the Pi connects out to it as
-// an RFCOMM client. Its MAC address must be supplied via the ESP32_BT_MAC
-// environment variable (see rfid-web-cpp.service) since it can't be
-// autodetected without a discovery/pairing step.
-constexpr const char* Esp32BluetoothMacEnvVar = "ESP32_BT_MAC";
-constexpr uint8_t Esp32RfcommChannel = 1;
+// Wired RS-422 link to the ESP32 panel: newline-delimited JSON, both
+// directions, at the same baud rate as the ESP32 firmware's kWireBaud.
+// This is the Pi's onboard UART0 header pins (GPIO14/TXD0 = physical pin 8,
+// GPIO15/RXD0 = physical pin 10), not a USB adapter - it needs enable_uart=1
+// in /boot/firmware/config.txt and the serial console disabled (raspi-config
+// or manually dropping "console=serial0,115200" from cmdline.txt and masking
+// serial-getty) before /dev/serial0 exists and is free for this link.
+constexpr std::array<const char*, 3> Esp32SerialDevices{"/dev/serial0", "/dev/ttyAMA0", "/dev/ttyUSB1"};
+constexpr speed_t Esp32SerialBaud = B57600;
 constexpr const char* Esp32DeviceId = "pi-rfid";
 
 struct AntennaState {
@@ -66,6 +68,38 @@ std::atomic<bool> bufferLogAvailable{false};
 std::atomic<int> requestedRfPower{-1};
 std::atomic<bool> esp32BridgeRunning{true};
 std::atomic<bool> esp32Connected{false};
+
+// Two panel indicator LEDs driven directly from the Pi's own GPIO, wired
+// straight to an LED (with a series resistor) rather than through the
+// ESP32 - pin 23/brown lights whenever this service is up, pin 24/gray
+// mirrors esp32Connected (the RS-422 link to the ESP32 panel).
+constexpr uint8_t PiReadyLedPin = 23;
+constexpr uint8_t PiEsp32LinkLedPin = 24;
+volatile uint32_t* gGpioRegs = nullptr;
+
+bool gpioInit() {
+    const int fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
+    if (fd < 0) return false;
+    void* mapped = mmap(nullptr, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    if (mapped == MAP_FAILED) return false;
+    gGpioRegs = static_cast<volatile uint32_t*>(mapped);
+    return true;
+}
+
+void gpioSetOutput(uint8_t pin) {
+    if (!gGpioRegs) return;
+    const uint32_t regIndex = pin / 10;       // GPFSELn, 3 bits per pin, 10 pins per register
+    const uint32_t shift = (pin % 10) * 3;
+    gGpioRegs[regIndex] = (gGpioRegs[regIndex] & ~(0x7u << shift)) | (0x1u << shift); // 001 = output
+}
+
+void gpioWrite(uint8_t pin, bool high) {
+    if (!gGpioRegs) return;
+    constexpr uint32_t GpsetWord = 7;  // GPSET0 at register offset 0x1C (word index 7)
+    constexpr uint32_t GpclrWord = 10; // GPCLR0 at register offset 0x28 (word index 10)
+    gGpioRegs[(high ? GpsetWord : GpclrWord) + pin / 32] = (1u << (pin % 32));
+}
 std::mutex esp32QueueMutex;
 std::deque<std::string> esp32Queue; // newline-terminated JSON lines, oldest-first
 
@@ -142,45 +176,126 @@ void queueEsp32Heartbeat() {
     queueEsp32Line(buildPingJson());
 }
 
-int connectEsp32Bluetooth(const std::string& macAddress) {
-    const int sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
-    if (sock < 0) return -1;
+std::string jsonValue(const std::string& body, const std::string& key);
+int jsonInteger(const std::string& body, const std::string& key);
 
-    sockaddr_rc address{};
-    address.rc_family = AF_BLUETOOTH;
-    address.rc_channel = Esp32RfcommChannel;
-    str2ba(macAddress.c_str(), &address.rc_bdaddr);
-
-    if (connect(sock, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-        close(sock);
-        return -1;
+// Starts or stops the reader loop; shared by the HTTP /api/scan-control
+// handler and scan_control commands arriving from the ESP32 panel buttons.
+bool applyScanControl(const std::string& action, const std::string& mode) {
+    if (action != "start" && action != "stop") return false;
+    scanEnabled = action == "start";
+    if (action == "start") {
+        bufferMode = mode == "buffer";
+        if (bufferMode) {
+            std::lock_guard<std::mutex> lock(antennaMutex);
+            bufferReadings.clear();
+            bufferLogAvailable = false;
+        }
+    } else {
+        if (bufferMode) bufferLogAvailable = true;
+        bufferMode = false;
     }
-    return sock;
+    queueEsp32Status(scanEnabled);
+    return true;
 }
 
-// Connects out to the ESP32 (it runs as the Bluetooth SPP server) and keeps
-// sending queued JSON lines plus a periodic ping, reconnecting whenever the
-// link drops.
-void esp32Loop() {
-    const char* macAddress = std::getenv(Esp32BluetoothMacEnvVar);
-    if (macAddress == nullptr || *macAddress == '\0') {
-        std::cerr << "ESP32 Bluetooth disabled: set " << Esp32BluetoothMacEnvVar
-                   << " to the ESP32's Bluetooth MAC address" << std::endl;
-        return;
-    }
+// Clears every tag table this process holds, same as /api/status-clear and
+// /api/buffer-clear combined. Triggered by the ESP32 panel's yellow
+// (reset) button.
+void resetReadings() {
+    std::lock_guard<std::mutex> lock(antennaMutex);
+    readings.clear();
+    bufferReadings.clear();
+    bufferLogAvailable = false;
+}
 
+// Handles one JSON line received from the ESP32 (its panel buttons: pong
+// replies need no action here).
+void processEsp32Line(const std::string& line) {
+    const std::string type = jsonValue(line, "type");
+    if (type != "scan_control") return;
+
+    const std::string action = jsonValue(line, "action");
+    if (action == "reset") {
+        resetReadings();
+        queueEsp32Status(scanEnabled);
+        std::cerr << "ESP32 panel: reset" << std::endl;
+    } else if (action == "select") {
+        std::cerr << "ESP32 panel: select gate " << jsonInteger(line, "gate") << std::endl;
+    } else if (action == "export") {
+        std::cerr << "ESP32 panel: export requested" << std::endl;
+    } else {
+        applyScanControl(action, "");
+    }
+}
+
+// Both this link and the RFID reader's own SerialDevices list can match
+// /dev/ttyUSB1 as a fallback - if a USB adapter drops out and re-enumerates
+// in the other slot, the two threads can silently swap devices instead of
+// failing, since plain ttyUSB* names aren't tied to a specific physical
+// port. Once the real wiring is in and `ls -la /dev/serial/by-path/` shows
+// which stable path is which adapter, set ESP32_SERIAL_DEVICE (and the
+// reader's RFID_SERIAL_DEVICE) in the systemd unit to that path so this
+// guesswork is skipped entirely.
+int openEsp32Serial() {
+    if (const char* configured = std::getenv("ESP32_SERIAL_DEVICE")) {
+        const int serial = open(configured, O_RDWR | O_NOCTTY | O_SYNC);
+        if (serial < 0) {
+            std::cerr << "ESP32 link: configured device " << configured << " unavailable" << std::endl;
+            return -1;
+        }
+        termios settings{};
+        tcgetattr(serial, &settings);
+        cfmakeraw(&settings);
+        settings.c_cflag = CS8 | CREAD | CLOCAL;
+        settings.c_cc[VMIN] = 0;
+        settings.c_cc[VTIME] = 5;
+        cfsetispeed(&settings, Esp32SerialBaud);
+        cfsetospeed(&settings, Esp32SerialBaud);
+        tcsetattr(serial, TCSANOW, &settings);
+        tcflush(serial, TCIOFLUSH);
+        std::cerr << "ESP32 link: opened " << configured << " (from ESP32_SERIAL_DEVICE)" << std::endl;
+        return serial;
+    }
+    for (const auto device : Esp32SerialDevices) {
+        const int serial = open(device, O_RDWR | O_NOCTTY | O_SYNC);
+        if (serial < 0) continue;
+
+        termios settings{};
+        tcgetattr(serial, &settings);
+        cfmakeraw(&settings);
+        settings.c_cflag = CS8 | CREAD | CLOCAL;
+        settings.c_cc[VMIN] = 0;
+        settings.c_cc[VTIME] = 5;
+        cfsetispeed(&settings, Esp32SerialBaud);
+        cfsetospeed(&settings, Esp32SerialBaud);
+        tcsetattr(serial, TCSANOW, &settings);
+        tcflush(serial, TCIOFLUSH);
+
+        std::cerr << "ESP32 link: opened " << device << std::endl;
+        return serial;
+    }
+    return -1;
+}
+
+// Talks newline-delimited JSON to the ESP32 panel over a wired RS-422
+// UART: sends queued lines plus a periodic ping, and dispatches whatever
+// the panel sends back (scan_control from its buttons). Reopens the
+// device whenever it's missing or the link drops.
+void esp32Loop() {
     while (esp32BridgeRunning) {
-        std::cerr << "ESP32 Bluetooth: connecting to " << macAddress << " ..." << std::endl;
-        const int sock = connectEsp32Bluetooth(macAddress);
-        if (sock < 0) {
+        const int serial = openEsp32Serial();
+        if (serial < 0) {
+            std::cerr << "ESP32 link unavailable: no serial device found" << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(2));
             continue;
         }
-        std::cerr << "ESP32 Bluetooth: connected" << std::endl;
         esp32Connected = true;
+        gpioWrite(PiEsp32LinkLedPin, true);
         queueEsp32Status(scanEnabled);
 
         auto lastHeartbeat = std::chrono::steady_clock::now();
+        std::string rxBuffer;
         bool linkOk = true;
         while (linkOk && esp32BridgeRunning) {
             std::string line;
@@ -192,13 +307,38 @@ void esp32Loop() {
                 }
             }
             if (!line.empty()) {
-                const auto written = write(sock, line.data(), line.size());
+                const auto written = write(serial, line.data(), line.size());
                 if (written != static_cast<ssize_t>(line.size())) {
-                    std::cerr << "ESP32 Bluetooth write failed; reconnecting" << std::endl;
+                    std::cerr << "ESP32 link write failed; reopening" << std::endl;
                     linkOk = false;
                     break;
                 }
             }
+
+            fd_set readSet;
+            FD_ZERO(&readSet);
+            FD_SET(serial, &readSet);
+            timeval noWait{0, 0};
+            if (select(serial + 1, &readSet, nullptr, nullptr, &noWait) > 0) {
+                char readBuffer[512];
+                const ssize_t received = read(serial, readBuffer, sizeof(readBuffer));
+                if (received > 0) {
+                    rxBuffer.append(readBuffer, static_cast<size_t>(received));
+                    size_t newlinePos;
+                    while ((newlinePos = rxBuffer.find('\n')) != std::string::npos) {
+                        std::string commandLine = rxBuffer.substr(0, newlinePos);
+                        rxBuffer.erase(0, newlinePos + 1);
+                        if (!commandLine.empty() && commandLine.back() == '\r') commandLine.pop_back();
+                        processEsp32Line(commandLine);
+                    }
+                    if (rxBuffer.size() > 4096) rxBuffer.clear(); // guard against a runaway peer
+                } else {
+                    std::cerr << "ESP32 link read failed; reopening" << std::endl;
+                    linkOk = false;
+                    break;
+                }
+            }
+
             const auto now = std::chrono::steady_clock::now();
             if (now - lastHeartbeat >= std::chrono::milliseconds(500)) {
                 lastHeartbeat = now;
@@ -208,7 +348,8 @@ void esp32Loop() {
         }
 
         esp32Connected = false;
-        close(sock);
+        gpioWrite(PiEsp32LinkLedPin, false);
+        close(serial);
         if (esp32BridgeRunning) std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 }
@@ -343,11 +484,21 @@ void parseInventoryFrame(const std::vector<unsigned char>& frame) {
 void readerLoop() {
     int serial = -1;
     const char* serialDevice = nullptr;
-    for (const auto device : SerialDevices) {
-        serial = open(device, O_RDWR | O_NOCTTY);
+    if (const char* configured = std::getenv("RFID_SERIAL_DEVICE")) {
+        serial = open(configured, O_RDWR | O_NOCTTY);
         if (serial >= 0) {
-            serialDevice = device;
-            break;
+            serialDevice = configured;
+        } else {
+            std::cerr << "RFID serial: configured device " << configured << " unavailable" << std::endl;
+            return;
+        }
+    } else {
+        for (const auto device : SerialDevices) {
+            serial = open(device, O_RDWR | O_NOCTTY);
+            if (serial >= 0) {
+                serialDevice = device;
+                break;
+            }
         }
     }
     if (serial < 0) {
@@ -629,20 +780,7 @@ void handleClient(int client) {
         const std::string payload = bodyStart == std::string::npos ? "" : request.substr(bodyStart + 4);
         const std::string action = jsonValue(payload, "action");
         const std::string mode = jsonValue(payload, "mode");
-        if (action == "start" || action == "stop") {
-            scanEnabled = action == "start";
-            if (action == "start") {
-                bufferMode = mode == "buffer";
-                if (bufferMode) {
-                    std::lock_guard<std::mutex> lock(antennaMutex);
-                    bufferReadings.clear();
-                    bufferLogAvailable = false;
-                }
-            } else {
-                if (bufferMode) bufferLogAvailable = true;
-                bufferMode = false;
-            }
-            queueEsp32Status(scanEnabled);
+        if (applyScanControl(action, mode)) {
             body = "{\"status\":\"success\",\"scanning\":" + std::string(scanEnabled ? "true" : "false") + ",\"mode\":\"" + (bufferMode ? "buffer" : "normal") + "\"}";
             const auto result = response("200 OK", "application/json", body);
             send(client, result.c_str(), result.size(), 0);
@@ -692,7 +830,15 @@ void handleClient(int client) {
 }
 
 int main() {
-    std::signal(SIGPIPE, SIG_IGN); // a dropped HTTP client or ESP32 Bluetooth link must not kill the process
+    std::signal(SIGPIPE, SIG_IGN); // a dropped HTTP client socket must not kill the process
+
+    if (gpioInit()) {
+        gpioSetOutput(PiReadyLedPin);
+        gpioSetOutput(PiEsp32LinkLedPin);
+        gpioWrite(PiReadyLedPin, true);
+    } else {
+        std::cerr << "GPIO: /dev/gpiomem unavailable, panel LEDs disabled" << std::endl;
+    }
 
     const int server = socket(AF_INET, SOCK_STREAM, 0);
     if (server < 0) return 1;

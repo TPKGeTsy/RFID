@@ -1,0 +1,19 @@
+[Unit]
+Description=RFID C++ Web Prototype
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/rfid-web-cpp
+# Bluetooth MAC address of the ESP32 display (it runs as the SPP server;
+# this process connects out to it). Read directly off this board's own
+# boot log (esp_bt_dev_get_address()) on 2026-09-18; re-read it the same
+# way if this board is ever replaced.
+Environment=ESP32_BT_MAC=08:3A:F2:67:77:A6
+ExecStart=/var/www/rfid-web-cpp/rfid-web-cpp
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

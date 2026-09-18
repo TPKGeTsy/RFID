@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RFID Controller</title>
+  <style>
+    :root { font-family: Arial, sans-serif; color: #18202b; background: #eef2f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #eef2f5; overflow: hidden; }
+    button, input, select { font: inherit; }
+    .display-tools { position: absolute; top: 22px; right: 26px; z-index: 12; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(148, 163, 184, .55); border-radius: 10px; background: rgba(255, 255, 255, .8); box-shadow: 0 8px 20px rgba(15, 23, 42, .12); backdrop-filter: blur(8px); }
+    .display-tools label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
+    .display-tools select { width: 58px; min-width: 58px; padding: 7px 5px; }
+    .display-tools input { width: 16px; height: 16px; accent-color: #2563eb; }
+    .night-toggle { border: 1px solid #94a3b8; border-radius: 7px; padding: 8px 12px; color: #18202b; background: #fff; cursor: pointer; font-weight: 700; }
+    .night-mode .night-toggle { color: #e2e8f0; background: #0f172a; border-color: #64748b; }
+    .night-mode body { color: #e2e8f0; background: #0f172a; }
+    .night-mode .display-tools { color: #e2e8f0; background: rgba(15, 23, 42, .86); border-color: #475569; }
+    .night-mode .brand { color: #e2e8f0; text-shadow: 0 1px 2px #0f172a; }
+    .night-mode .page { background: rgba(30, 41, 59, .97); box-shadow: 0 18px 40px rgba(0, 0, 0, .4); }
+    .night-mode .panel, .night-mode .antenna-card { color: #e2e8f0; background: #1e293b; border-color: #475569; }
+    .night-mode .back, .night-mode input, .night-mode select { color: #e2e8f0; background: #0f172a; border-color: #64748b; }
+    .night-mode th { color: #e2e8f0; background: #334155; }
+    .night-mode th, .night-mode td { border-color: #475569; }
+    .night-mode .muted { color: #cbd5e1; }
+    .night-mode .title-card { color: #f1f5f9; text-shadow: 0 2px 18px rgba(15, 23, 42, .85); }
+    .app { height: 100vh; display: block; }
+    .menu { position: absolute; inset: 0; z-index: 5; pointer-events: none; transform: translate3d(var(--scene-x, 0px), var(--scene-y, 0px), 0); transition: transform .16s ease-out; }
+    .brand { position: absolute; top: 24px; left: 28px; margin: 0; color: #17212b; font-size: 20px; text-shadow: 0 1px 2px #fff; }
+    .menu-button { position: absolute; border: 0; border-radius: 8px; padding: 13px 14px; color: #fff; cursor: pointer; font-weight: 700; text-align: left; box-shadow: 0 5px 14px rgba(15, 23, 42, .2); pointer-events: auto; transition: transform .2s ease, box-shadow .2s ease; }
+    .menu-button.antenna { top: 250px; left: 500px; }
+    .menu-button.status { top: 200px; left: 800px; }
+    .menu-button.network { top: 500px; left: 900px; }
+    .menu-button.antenna { background: #0f766e; }
+    .menu-button.status { background: #b45309; }
+    .menu-button.network { background: #2563eb; }
+    .menu-button.active { outline: 3px solid #fff; outline-offset: 2px; }
+    .workspace { position: relative; width: 100%; height: 100vh; padding: 24px; overflow: hidden; perspective: 1100px; }
+    .home { position: absolute; left: 34px; bottom: 34px; width: 300px; text-align: left; z-index: 2; transform: translate3d(var(--scene-x, 0px), var(--scene-y, 0px), 0); transition: transform .16s ease-out; }
+    .hero { height: 100%; display: grid; place-items: center; text-align: center; position: relative; }
+    .hero-image { width: min(600px, 46vw); max-height: 75vh; object-fit: contain; filter: drop-shadow(0 24px 24px rgba(15, 23, 42, .2)); transform: translate3d(var(--image-x, 0px), var(--image-y, 0px), 0) rotateX(var(--image-rx, 0deg)) rotateY(var(--image-ry, 0deg)); transition: filter .38s ease; }
+    .title-card { position: absolute; inset: 0; z-index: 9; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; text-align: center; padding: 0 24px; font-size: clamp(30px, 6vw, 68px); font-weight: 800; letter-spacing: .02em; color: #17212b; text-shadow: 0 2px 18px rgba(255, 255, 255, .65); }
+    .title-card.show { animation: title-card-pulse .5s ease both; }
+    @keyframes title-card-pulse { 0% { opacity: 0; transform: translateY(14px) scale(.96); } 45%, 55% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-14px) scale(1.02); } }
+    .hero-image.hero-zoom-out { animation: hero-zoom-fade-out .45s ease forwards; }
+    @keyframes hero-zoom-fade-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.2); } }
+    .hero-image.hero-fade-in { animation: hero-fade-in .45s ease forwards; }
+    @keyframes hero-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    .page { position: absolute; top: 24px; bottom: 24px; width: min(560px, 36vw); margin: 0; padding: 22px; border-radius: 14px; background: rgba(255, 255, 255, .97); box-shadow: 0 18px 40px rgba(15, 23, 42, .2); overflow: hidden; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) rotateX(var(--panel-rx, 0deg)) rotateY(var(--panel-ry, 0deg)); transition: opacity .3s ease, transform .18s ease-out, box-shadow .3s ease; }
+    .page[hidden] { display: block; opacity: 0; pointer-events: none; visibility: hidden; }
+    .page:not([hidden]) { animation: drawer-in .38s cubic-bezier(.2, .8, .2, 1) both; }
+    @keyframes drawer-in { from { opacity: 0; transform: translate3d(0, 24px, 0) scale(.97); } to { opacity: 1; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) scale(1); } }
+    .page.panel-leaving { animation: panel-fade-out .3s ease forwards; pointer-events: none; }
+    @keyframes panel-fade-out { from { opacity: 1; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) scale(1); } to { opacity: 0; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) scale(.97); } }
+    .page#antenna-page, .page#network-page { left: 24px; border-right: 6px solid #0f766e; }
+    .page#network-page { border-right-color: #2563eb; }
+    .page#status-page { right: 24px; border-left: 6px solid #b45309; overflow-y: auto; }
+    .page-head { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
+    .page-head h1 { margin: 0; font-size: 28px; }
+    .back { border: 1px solid #aab3bf; background: #fff; border-radius: 6px; padding: 9px 15px; cursor: pointer; }
+    .panel { border: 1px solid #d9dee5; border-radius: 10px; padding: 18px; background: #fff; }
+    .home .panel { border: 0; background: #b91c1c; color: #fff; box-shadow: 0 16px 30px rgba(127, 29, 29, .28); }
+    .home .panel h1 { margin-top: 0; }
+    .home .panel select { border-color: #fecaca; }
+    .home .green { background: #7f1d1d; }
+    .home .orange { background: #ef4444; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 14px; }
+    label { display: grid; gap: 6px; font-size: 14px; font-weight: 700; }
+    input, select { width: 100%; border: 1px solid #aab3bf; border-radius: 5px; padding: 10px; background: #fff; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .action { border: 0; border-radius: 6px; padding: 10px 15px; color: #fff; cursor: pointer; font-weight: 700; }
+    .blue { background: #2563eb; }
+    .green { background: #15803d; }
+    .orange { background: #b45309; }
+    .gray { background: #475569; }
+    .muted { color: #64748b; font-size: 13px; }
+    .home .muted, .home .message { color: #fee2e2; }
+    .antenna-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+    .antenna-card { border: 1px solid #d9dee5; border-radius: 7px; padding: 13px; }
+    .antenna-card h3 { margin: 0 0 10px; font-size: 15px; }
+    .status-dot { width: 14px; height: 14px; display: inline-block; border-radius: 50%; background: #dc2626; vertical-align: middle; margin-right: 7px; }
+    .status-dot.green-dot { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .18), 0 0 14px rgba(34, 197, 94, .9); animation: antenna-blink .8s ease-in-out infinite; }
+    .buffer-active { color: #15803d; font-weight: 700; }
+    .buffer-panel { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; border: 2px solid #94a3b8; border-radius: 9px; padding: 14px; background: #f8fafc; }
+    .buffer-panel.running { border-color: #22c55e; background: #f0fdf4; }
+    .buffer-panel h3 { margin: 0 0 5px; }
+    .buffer-panel .action { white-space: nowrap; }
+    .night-mode .buffer-panel { color: #f8fafc; background: #1e293b; border-color: #64748b; }
+    .night-mode .buffer-panel.running { background: #14532d; border-color: #4ade80; }
+    .night-mode .buffer-panel .muted { color: #cbd5e1; }
+    .night-mode .buffer-active { color: #86efac; }
+    @keyframes antenna-blink { 0%, 100% { opacity: .45; transform: scale(.88); } 50% { opacity: 1; transform: scale(1.12); } }
+    .log-tools { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 15px; }
+    .log-tools label { min-width: 190px; }
+    .table-wrap { overflow: auto; max-height: 420px; border: 1px solid #d9dee5; }
+    table { width: 100%; border-collapse: collapse; min-width: 650px; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px; text-align: left; white-space: nowrap; }
+    th { position: sticky; top: 0; background: #f2f4f7; }
+    .message { margin: 14px 0 0; min-height: 20px; font-size: 13px; }
+    @media (max-width: 760px) { body { overflow: auto; } .brand { top: 14px; left: 18px; font-size: 17px; } .menu-button { padding: 11px 12px; } .menu-button.antenna { top: 54px; left: 14px; } .menu-button.status { top: 102px; left: 40px; } .menu-button.network { top: 150px; left: 14px; } .workspace { height: 100vh; min-height: 560px; } .hero-image { width: min(500px, 72vw); } .home { left: 18px; bottom: 18px; width: 270px; } .page { top: 18px; right: 18px; bottom: 18px; width: calc(100% - 36px); } .form-grid, .antenna-cards { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 480px) { .workspace { padding: 12px; } .form-grid, .antenna-cards { grid-template-columns: 1fr; } .page-head h1 { font-size: 22px; } .home { left: 12px; right: 12px; bottom: 12px; width: auto; } .page { top: 12px; right: 12px; bottom: 12px; width: calc(100% - 24px); } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="display-tools" aria-label="Display settings">
+      <label><button id="night-mode-button" class="night-toggle" type="button">Night</button><input id="night-mode" type="checkbox" hidden></label>
+      <label><span class="language-label" hidden>Language</span><select id="language-select" aria-label="Language"><option value="en">EN</option><option value="zh">中</option></select></label>
+    </div>
+    <nav class="menu" aria-label="Main menu">
+      <h2 class="brand">RFID Controller</h2>
+      <button class="menu-button antenna" data-page="antenna-page" data-image="/assets/antenna.png" data-label-en="Antenna" data-label-zh="天线">Antenna</button>
+      <button class="menu-button status" data-page="status-page" data-image="/assets/Status.png" data-label-en="Status" data-label-zh="状态">Status</button>
+      <button class="menu-button network" data-page="network-page" data-image="/assets/Network.png" data-label-en="Network" data-label-zh="网络">Network</button>
+    </nav>
+    <main class="workspace">
+      <div class="hero">
+        <img id="main-image" class="hero-image" src="/assets/Main.png" alt="RFID reader">
+        <div id="title-card" class="title-card" aria-hidden="true"></div>
+      </div>
+      <section id="home-page" class="home page-view">
+        <div class="panel"><h1>RFID Reader</h1><label><span id="scan-mode-label">Scan Mode</span> <select id="scan-mode"><option value="continuous">Continuous</option><option value="buffer">Buffer (1 sec / 800 tags)</option><option value="manual">Manual Start / Stop</option></select></label><p id="scan-message" class="message">Scan stopped</p><div class="button-row"><button id="start-scan" class="action green" type="button">Start Scan</button><button id="stop-scan" class="action orange" type="button">Stop Scan</button></div></div>
+      </section>
+      <section id="antenna-page" class="page page-view" hidden>
+        <div class="page-head"><button class="back" data-page="home-page">Back</button><h1>Antenna</h1></div>
+        <div class="panel">
+          <div class="antenna-cards">
+            <div class="antenna-card"><h3>Antenna 1</h3><span class="status-dot" data-status-dot="1"></span><span data-status-label="1">No RFID</span></div>
+            <div class="antenna-card"><h3>Antenna 2</h3><span class="status-dot" data-status-dot="2"></span><span data-status-label="2">No RFID</span></div>
+            <div class="antenna-card"><h3>Antenna 3</h3><span class="status-dot" data-status-dot="3"></span><span data-status-label="3">No RFID</span></div>
+            <div class="antenna-card"><h3>Antenna 4</h3><span class="status-dot" data-status-dot="4"></span><span data-status-label="4">No RFID</span></div>
+          </div>
+          <h2>RF Power / TX Power</h2>
+          <div class="form-grid">
+            <label><span>Antenna</span> <select><option>All antennas</option><option>Antenna 1</option><option>Antenna 2</option><option>Antenna 3</option><option>Antenna 4</option></select></label>
+            <label id="read-power-label"><span>Read Power (dBm)</span> <input id="read-power" type="number" min="0" max="40" value="15"></label>
+            <label id="write-power-label"><span>Write Power (dBm)</span> <input id="write-power" type="number" min="0" max="40" value="15"></label>
+            <label id="endpoint-label"><span>API endpoint</span> <input placeholder="http://192.168.10.111:3000"></label>
+          </div>
+          <div class="button-row"><button id="save-antenna-settings" class="action green" type="button">Save antenna settings</button></div><p id="antenna-message" class="message"></p>
+          <p class="muted">ภาพอยู่ด้านบน, สถานะเสาอยู่ใต้ภาพ, ฟอร์ม power และ API อยู่ส่วนล่าง</p>
+        </div>
+      </section>
+      <section id="status-page" class="page page-view" hidden>
+        <div class="page-head"><button class="back" data-page="home-page">Back</button><h1>Status</h1></div>
+        <div class="panel">
+          <div class="log-tools"><label><span id="read-from-label">Read from antenna</span> <select id="log-antenna"><option value="all">All antennas</option><option value="1">Antenna 1</option><option value="2">Antenna 2</option><option value="3">Antenna 3</option><option value="4">Antenna 4</option></select></label><button id="view-log" class="action orange" type="button">View log</button><button id="refresh-log" class="action orange" type="button" hidden>Refresh log</button><button id="clear-log" class="action gray" type="button" hidden>Clear</button></div>
+          <p id="status-message" class="message">Checking Reader status...</p>
+          <div id="buffer-panel" class="buffer-panel"><div><h3>Buffer mode</h3><span id="buffer-status">Stopped</span><span class="muted"> <span id="buffer-rate">Not active</span></span></div><div class="button-row"><button id="view-buffer-log" class="action gray" type="button" hidden>View Buffer Log</button><button id="clear-buffer-log" class="action orange" type="button" hidden>Clear Buffer Log</button><button id="back-buffer-log" class="back" type="button" hidden>Back</button></div></div>
+          <div class="antenna-cards"><div class="antenna-card"><h3>Antenna 1</h3><span class="status-dot" data-status-dot="1"></span><span data-status-label="1">Unknown</span></div><div class="antenna-card"><h3>Antenna 2</h3><span class="status-dot" data-status-dot="2"></span><span data-status-label="2">Unknown</span></div><div class="antenna-card"><h3>Antenna 3</h3><span class="status-dot" data-status-dot="3"></span><span data-status-label="3">Unknown</span></div><div class="antenna-card"><h3>Antenna 4</h3><span class="status-dot" data-status-dot="4"></span><span data-status-label="4">Unknown</span></div></div>
+          <div id="log-view" class="table-wrap" hidden><table><thead><tr><th>Timestamp</th><th>Antenna</th><th>EPC</th><th>RSSI</th><th>Count</th></tr></thead><tbody id="status-log"><tr><td colspan="5" class="muted">Press View log to load readings</td></tr></tbody></table></div>
+          <p class="muted">ภาพอยู่ด้านบน, ตัวกรองเสาและปุ่ม refresh อยู่ก่อนตาราง, log แสดง EPC/RSSI/Timestamp ด้านล่าง</p>
+        </div>
+      </section>
+      <section id="network-page" class="page page-view" hidden>
+        <div class="page-head"><button class="back" data-page="home-page">Back</button><h1>Network</h1></div>
+        <div class="panel"><div class="form-grid"><label><span>IP Address</span> <input id="ip" placeholder="192.168.1.10"></label><label><span>Gateway</span> <input id="gateway" placeholder="192.168.1.1"></label></div><div class="button-row"><button id="refresh-network" class="action gray" type="button">Refresh</button><button id="save-network" class="action blue" type="button">Save IP &amp; Gateway</button></div><p id="network-message" class="message">Loading network...</p><p class="muted">ภาพอยู่ด้านบน, ช่อง IP/Gateway อยู่ใต้ภาพ, ปุ่มบันทึกอยู่ด้านล่าง</p></div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const views = [...document.querySelectorAll('.page-view')];
+    const menuButtons = [...document.querySelectorAll('.menu-button')];
+    const backButtons = [...document.querySelectorAll('.back')];
+    const mainImage = document.getElementById('main-image');
+    const titleCard = document.getElementById('title-card');
+    const navMenu = document.querySelector('.menu');
+    const HOME_IMAGE = '/assets/Main.png';
+    const ZOOM_OUT_MS = 450;
+    const TITLE_CARD_MS = 500;
+    const FADE_IN_MS = 450;
+    const PANEL_OUT_MS = 300;
+    let currentLanguage = 'en';
+    let isTransitioning = false;
+    const translations = { en: { brand: 'RFID Controller', homeTitle: 'RFID Reader', scanMode: 'Scan Mode', start: 'Start Scan', stop: 'Stop Scan', antenna: 'Antenna', status: 'Status', network: 'Network', back: 'Back', rfPower: 'RF Power / TX Power', readPower: 'Read Power (dBm)', writePower: 'Write Power (dBm)', endpoint: 'API endpoint', viewLog: 'View log', refresh: 'Refresh log', clear: 'Clear', readFrom: 'Read from antenna', ip: 'IP Address', gateway: 'Gateway', refreshNetwork: 'Refresh', saveNetwork: 'Save IP & Gateway', night: 'Night mode', language: 'Language' }, zh: { brand: 'RFID 控制器', homeTitle: 'RFID 读写器', scanMode: '扫描模式', start: '开始扫描', stop: '停止扫描', antenna: '天线', status: '状态', network: '网络', back: '返回', rfPower: '射频功率 / TX 功率', readPower: '读取功率 (dBm)', writePower: '写入功率 (dBm)', endpoint: 'API 地址', viewLog: '查看记录', refresh: '刷新记录', clear: '清除', readFrom: '读取天线', ip: 'IP 地址', gateway: '网关', refreshNetwork: '刷新', saveNetwork: '保存 IP 和网关', night: '夜间模式', language: '语言' } };
+    function wait(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
+    function applyLanguage(language) { currentLanguage = language; const text = translations[language] || translations.en; document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; document.querySelector('.brand').textContent = text.brand; document.querySelector('#home-page h1').textContent = text.homeTitle; document.getElementById('scan-mode-label').textContent = text.scanMode; document.getElementById('start-scan').textContent = text.start; document.getElementById('stop-scan').textContent = text.stop; document.querySelector('.menu-button.antenna').textContent = text.antenna; document.querySelector('.menu-button.status').textContent = text.status; document.querySelector('.menu-button.network').textContent = text.network; document.querySelectorAll('.back').forEach((button) => { button.textContent = text.back; }); document.querySelector('#antenna-page h1').textContent = text.antenna; document.querySelector('#status-page h1').textContent = text.status; document.querySelector('#network-page h1').textContent = text.network; document.querySelector('#antenna-page h2').textContent = text.rfPower; document.getElementById('view-log').textContent = text.viewLog; document.getElementById('refresh-log').textContent = text.refresh; document.getElementById('clear-log').textContent = text.clear; document.getElementById('refresh-network').textContent = text.refreshNetwork; document.getElementById('save-network').textContent = text.saveNetwork; document.querySelector('.language-label').textContent = text.language; document.getElementById('read-from-label').textContent = text.readFrom; document.querySelector('#ip').previousElementSibling.textContent = text.ip; document.querySelector('#gateway').previousElementSibling.textContent = text.gateway; document.querySelector('#read-power-label span').textContent = text.readPower; document.querySelector('#write-power-label span').textContent = text.writePower; document.querySelector('#endpoint-label span').textContent = text.endpoint; localStorage.setItem('rfid-language', language); }
+    const savedLanguage = localStorage.getItem('rfid-language') || 'en';
+    const languageSelect = document.getElementById('language-select');
+    languageSelect.value = savedLanguage;
+    languageSelect.addEventListener('change', () => applyLanguage(languageSelect.value));
+    const nightModeButton = document.getElementById('night-mode-button');
+    function setNightMode(enabled) { document.documentElement.classList.toggle('night-mode', enabled); document.getElementById('night-mode').checked = enabled; nightModeButton.setAttribute('aria-pressed', enabled ? 'true' : 'false'); localStorage.setItem('rfid-night-mode', enabled ? '1' : '0'); }
+    nightModeButton.addEventListener('click', () => setNightMode(!document.getElementById('night-mode').checked));
+    document.getElementById('night-mode').addEventListener('change', (event) => setNightMode(event.target.checked));
+    const nightMode = document.getElementById('night-mode');
+    nightMode.checked = localStorage.getItem('rfid-night-mode') === '1';
+    setNightMode(nightMode.checked);
+    applyLanguage(savedLanguage);
+    function labelFor(pageId) { const key = pageId === 'antenna-page' ? 'antenna' : pageId === 'status-page' ? 'status' : pageId === 'network-page' ? 'network' : ''; const text = translations[currentLanguage] || translations.en; return text[key] || ''; }
+    function afterPageShown(pageId) { if (pageId === 'status-page') { loadStatus(); loadScanStatus(); } if (pageId === 'antenna-page') loadStatus(); }
+    async function openMenuPage(pageId, imagePath) {
+      if (isTransitioning) return;
+      isTransitioning = true;
+      navMenu.hidden = true;
+      mainImage.classList.remove('hero-fade-in');
+      mainImage.classList.add('hero-zoom-out');
+      await wait(ZOOM_OUT_MS);
+      titleCard.textContent = labelFor(pageId);
+      titleCard.classList.add('show');
+      await wait(TITLE_CARD_MS);
+      titleCard.classList.remove('show');
+      mainImage.src = imagePath || HOME_IMAGE;
+      mainImage.classList.remove('hero-zoom-out');
+      mainImage.classList.add('hero-fade-in');
+      await wait(FADE_IN_MS);
+      mainImage.classList.remove('hero-fade-in');
+      views.forEach((view) => { view.hidden = view.id !== pageId; });
+      menuButtons.forEach((button) => button.classList.toggle('active', button.dataset.page === pageId));
+      afterPageShown(pageId);
+      isTransitioning = false;
+    }
+    async function closeMenuPage() {
+      if (isTransitioning) return;
+      isTransitioning = true;
+      const activePage = views.find((view) => !view.hidden && view.classList.contains('page'));
+      if (activePage) {
+        activePage.classList.add('panel-leaving');
+        await wait(PANEL_OUT_MS);
+        activePage.hidden = true;
+        activePage.classList.remove('panel-leaving');
+      }
+      mainImage.classList.remove('hero-fade-in');
+      mainImage.classList.add('hero-zoom-out');
+      await wait(ZOOM_OUT_MS);
+      mainImage.src = HOME_IMAGE;
+      mainImage.classList.remove('hero-zoom-out');
+      mainImage.classList.add('hero-fade-in');
+      await wait(FADE_IN_MS);
+      mainImage.classList.remove('hero-fade-in');
+      document.getElementById('home-page').hidden = false;
+      navMenu.hidden = false;
+      menuButtons.forEach((button) => button.classList.remove('active'));
+      isTransitioning = false;
+    }
+    menuButtons.forEach((button) => button.addEventListener('click', () => openMenuPage(button.dataset.page, button.dataset.image || HOME_IMAGE)));
+    backButtons.forEach((button) => button.addEventListener('click', () => closeMenuPage()));
+    const workspace = document.querySelector('.workspace');
+    function updateScene(event) { if (window.innerWidth <= 760) return; const x = event.clientX / window.innerWidth - .5; const y = event.clientY / window.innerHeight - .5; const page = [...views].find((view) => !view.hidden && view.classList.contains('page')); const panelDirection = page && page.id === 'status-page' ? -1 : 1; document.documentElement.style.setProperty('--scene-x', `${x * -12}px`); document.documentElement.style.setProperty('--scene-y', `${y * -8}px`); workspace.style.setProperty('--image-x', `${x * -50}px`); workspace.style.setProperty('--image-y', `${y * -34}px`); workspace.style.setProperty('--image-rx', `${y * -4}deg`); workspace.style.setProperty('--image-ry', `${x * 5}deg`); workspace.style.setProperty('--panel-x', `${x * panelDirection * 8}px`); workspace.style.setProperty('--panel-y', `${y * 6}px`); workspace.style.setProperty('--panel-rx', `${y * -2}deg`); workspace.style.setProperty('--panel-ry', `${x * panelDirection * 3}deg`); }
+    window.addEventListener('mousemove', updateScene);
+    window.addEventListener('blur', () => { ['--scene-x', '--scene-y'].forEach((property) => document.documentElement.style.removeProperty(property)); ['--image-x', '--image-y', '--image-rx', '--image-ry', '--panel-x', '--panel-y', '--panel-rx', '--panel-ry'].forEach((property) => workspace.style.removeProperty(property)); });
+    async function loadNetwork() { const message = document.getElementById('network-message'); try { const response = await fetch('/api/get-ip', {cache:'no-store'}); const data = await response.json(); document.getElementById('ip').value = data.ip || ''; document.getElementById('gateway').value = data.gateway || ''; message.textContent = 'Network connected'; } catch (error) { message.textContent = 'Network API unavailable'; } }
+    async function saveNetwork() { const message = document.getElementById('network-message'); try { const response = await fetch('/api/update_network', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ip:document.getElementById('ip').value.trim(), gateway:document.getElementById('gateway').value.trim()})}); const data = await response.json(); message.textContent = data.message || 'Save failed'; } catch (error) { message.textContent = 'Network API unavailable'; } }
+    async function saveAntennaSettings() { const message = document.getElementById('antenna-message'); const power = Number(document.getElementById('read-power').value); if (!Number.isInteger(power) || power < 0 || power > 40) { message.textContent = 'Power must be between 0 and 40 dBm'; return; } try { const response = await fetch('/api/antenna-power', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({power})}); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Power update failed'); document.getElementById('write-power').value = power; message.textContent = `${data.message} (${power} dBm)`; } catch (error) { message.textContent = error.message || 'Antenna API unavailable'; } }
+    async function loadLog() { const body = document.getElementById('status-log'); const antenna = document.getElementById('log-antenna').value; try { const response = await fetch('/api/status-log?antenna=' + encodeURIComponent(antenna), {cache:'no-store'}); const data = await response.json(); body.innerHTML = (data.readings || []).map((item) => `<tr><td>${item.timestamp || '-'}</td><td>${item.antenna || '-'}</td><td>${item.epc || '-'}</td><td>${item.rssi ?? '-'}</td><td>${item.count ?? 1}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No readings yet</td></tr>'; } catch (error) { body.innerHTML = '<tr><td colspan="5" class="muted">Status API unavailable</td></tr>'; } }
+    async function loadScanStatus() { try { const response = await fetch('/api/scan-status', {cache:'no-store'}); const data = await response.json(); const panel = document.getElementById('buffer-panel'); const status = document.getElementById('buffer-status'); const rate = document.getElementById('buffer-rate'); const button = document.getElementById('view-buffer-log'); const active = data.scanning === true && data.mode === 'buffer'; status.textContent = active ? 'Running' : data.scanning ? 'Running (normal)' : 'Stopped'; status.classList.toggle('buffer-active', active); panel.classList.toggle('running', active); rate.textContent = active ? '1 sec / 800 tags' : data.buffer_log_available ? 'Stopped - log ready' : 'Not active'; button.hidden = !data.buffer_log_available || active; } catch (error) { document.getElementById('buffer-status').textContent = 'Unavailable'; } }
+    async function loadBufferLog() { const body = document.getElementById('status-log'); try { const response = await fetch('/api/buffer-log', {cache:'no-store'}); const data = await response.json(); body.innerHTML = (data.readings || []).map((item) => `<tr><td>${item.timestamp || '-'}</td><td>${item.antenna || '-'}</td><td>${item.epc || '-'}</td><td>${item.rssi ?? '-'}</td><td>${item.count ?? 1}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No Buffer readings</td></tr>'; document.getElementById('log-view').hidden = false; document.getElementById('clear-buffer-log').hidden = false; document.getElementById('back-buffer-log').hidden = false; } catch (error) { body.innerHTML = '<tr><td colspan="5" class="muted">Buffer log unavailable</td></tr>'; } }
+    async function clearBufferLog() { try { const response = await fetch('/api/buffer-clear', {method:'POST'}); if (!response.ok) throw new Error('Clear failed'); document.getElementById('status-log').innerHTML = '<tr><td colspan="5" class="muted">Buffer log cleared</td></tr>'; document.getElementById('view-buffer-log').hidden = true; document.getElementById('clear-buffer-log').hidden = true; } catch (error) { document.getElementById('status-message').textContent = error.message || 'Buffer API unavailable'; } }
+    function closeBufferLog() { document.getElementById('log-view').hidden = true; document.getElementById('clear-buffer-log').hidden = true; document.getElementById('back-buffer-log').hidden = true; document.getElementById('view-buffer-log').hidden = false; }
+    async function clearLog() { const message = document.getElementById('status-message'); try { const response = await fetch('/api/status-clear', {method:'POST'}); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Clear failed'); message.textContent = data.message || 'Status log cleared'; await loadLog(); } catch (error) { message.textContent = error.message || 'Status API unavailable'; } }
+    async function loadStatus() { try { const response = await fetch('/api/antenna-status', {cache:'no-store'}); const data = await response.json(); const message = document.getElementById('status-message'); if (message) message.textContent = data.source === 'reader' ? 'Reader connected' : 'Reader unavailable'; (data.antennas || []).forEach((item) => { const dots = document.querySelectorAll(`[data-status-dot="${item.id}"]`); const labels = document.querySelectorAll(`[data-status-label="${item.id}"]`); dots.forEach((dot) => dot.classList.toggle('green-dot', item.detected === true)); labels.forEach((label) => { label.textContent = item.detected ? 'Detected' : 'No RFID'; }); }); } catch (error) { const message = document.getElementById('status-message'); if (message) message.textContent = 'Status API unavailable'; } }
+    async function setScan(action) { const message = document.getElementById('scan-message'); const mode = document.getElementById('scan-mode').value; try { const response = await fetch('/api/scan-control', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, mode})}); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Scan command failed'); message.textContent = action === 'start' ? `Scanning (${mode})` : 'Scan stopped'; loadScanStatus(); if (action === 'stop' && mode !== 'buffer') { document.getElementById('log-view').hidden = false; document.getElementById('view-log').hidden = true; document.getElementById('refresh-log').hidden = false; document.getElementById('clear-log').hidden = false; loadLog(); } } catch (error) { message.textContent = error.message || 'Scan API unavailable'; } }
+    window.setInterval(() => { if (!document.getElementById('status-page').hidden) { loadStatus(); loadScanStatus(); } else if (!document.getElementById('antenna-page').hidden) loadStatus(); }, 100);
+    document.getElementById('start-scan').addEventListener('click', () => setScan('start')); document.getElementById('stop-scan').addEventListener('click', () => setScan('stop')); document.getElementById('refresh-network').addEventListener('click', loadNetwork); document.getElementById('save-network').addEventListener('click', saveNetwork); document.getElementById('save-antenna-settings').addEventListener('click', saveAntennaSettings); document.getElementById('view-log').addEventListener('click', () => { document.getElementById('log-view').hidden = false; document.getElementById('view-log').hidden = true; document.getElementById('refresh-log').hidden = false; document.getElementById('clear-log').hidden = false; loadLog(); }); document.getElementById('view-buffer-log').addEventListener('click', loadBufferLog); document.getElementById('clear-buffer-log').addEventListener('click', clearBufferLog); document.getElementById('back-buffer-log').addEventListener('click', closeBufferLog); document.getElementById('refresh-log').addEventListener('click', loadLog); document.getElementById('clear-log').addEventListener('click', clearLog); document.getElementById('log-antenna').addEventListener('change', () => { if (!document.getElementById('log-view').hidden) loadLog(); });
+  </script>
+</body>
+</html>

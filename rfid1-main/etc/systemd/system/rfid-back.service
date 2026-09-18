@@ -1,0 +1,12 @@
+[Unit]
+Description=RFID-K Python Service
+After=network.target
+
+[Service]
+ExecStart=/home/gmc/rfid-back/.venv/bin/python main.py
+WorkingDirectory=/home/gmc/rfid-back
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

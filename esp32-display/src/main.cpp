@@ -77,6 +77,7 @@ constexpr uint32_t kPeriodicRedrawMs = 500;
 constexpr uint32_t kStatusMessageMs = 3000;
 constexpr uint32_t kClearHoldMs = 1500;
 constexpr size_t kMaxExportEntries = 512;
+constexpr uint32_t kColumnDelayMs = 2500; // pause after each column typed over the BLE keyboard
 
 BleKeyboard gBleKeyboard(kBleKeyboardName, "LilyGo", 100);
 HardwareSerial gWireSerial(2);
@@ -93,6 +94,26 @@ size_t gWireLineLength = 0;
 // recurse back into the typing code from inside its own delay.
 volatile bool gTypingInProgress = false;
 String gPendingLiveRows;
+
+// Link health to the Pi, for the header indicator: the last time any byte
+// arrived on the wire, and the last time a complete valid JSON frame did.
+// Bytes without valid frames (wrong baud/polarity/noise) show as GARBLED.
+uint32_t gLastPiByteMs = 0;
+uint32_t gLastPiFrameMs = 0;
+bool gHeardPiByte = false;
+bool gHeardPiFrame = false;
+constexpr uint32_t kPiLinkTimeoutMs = 2000;
+
+// Batch-export progress, shown on screen while the (slow) typing runs.
+// White toggles gExportPaused mid-typing; red sets gExportAborted.
+bool gBatchExporting = false;
+bool gExportPaused = false;
+bool gExportAborted = false;
+size_t gExportTotal = 0;
+size_t gExportDone = 0;
+bool gWhiteLatch = false;
+uint32_t gLastPauseToggleMs = 0;
+uint32_t gLastExportRedrawMs = 0;
 
 struct ChannelState {
   bool hasTag = false;
@@ -189,6 +210,7 @@ size_t countTagsForChannel(uint8_t channel) {
 
 void typeCharByChar(const String &text); // defined below, used by the live-export path
 void flushPendingLiveRows(); // defined below, used by the live-export path
+void redraw();               // defined below, called while a long export blocks loop()
 
 // Applies one tag reading reported by the Pi. The antenna's two-per-
 // channel pairing is merged upstream (in hardware, before the Pi), so
@@ -221,6 +243,7 @@ void applyTagReading(uint8_t antenna, const char *epc, int rssi, uint32_t count)
       gPendingLiveRows += row;
     } else {
       gTypingInProgress = true;
+      gExportAborted = false;
       typeCharByChar(row);
       gTypingInProgress = false;
       flushPendingLiveRows();
@@ -266,6 +289,8 @@ void processLine(char *line, size_t length) {
     Serial.printf("[WIRE] dropped malformed line (%u bytes)\n", static_cast<unsigned>(length));
     return; // malformed frame: drop it and resync on the next newline
   }
+  gLastPiFrameMs = millis();
+  gHeardPiFrame = true;
 
   const char *type = doc["type"] | "";
   if (strcmp(type, "scan_result") == 0) {
@@ -283,6 +308,8 @@ void processLine(char *line, size_t length) {
 void pollWireSerial() {
   while (gWireSerial.available()) {
     char c = static_cast<char>(gWireSerial.read());
+    gLastPiByteMs = millis();
+    gHeardPiByte = true;
     if (c == '\n') {
       processLine(gWireLineBuffer, gWireLineLength);
       gWireLineLength = 0;
@@ -362,15 +389,59 @@ void pollOptoFeedback() {
 // One BLE notify per character is fragile if sent in a tight burst - pace
 // every single character rather than only every field, or whole words
 // come out with letters silently missing.
+// Runs between characters while typing: keeps draining the Pi link and the
+// panel LEDs/screen alive (the main loop is blocked), lets the white button
+// toggle pause/resume, and lets the red button cancel the export.
+void exportYield() {
+  pollWireSerial();
+  mirrorButtonEchoes();
+
+  const uint32_t now = millis();
+  const bool whiteDown = digitalRead(kExportButtonPin) == LOW || digitalRead(kWhiteButtonPin) == LOW;
+  if (whiteDown && !gWhiteLatch && now - gLastPauseToggleMs >= kDebounceMs) {
+    gExportPaused = !gExportPaused;
+    gLastPauseToggleMs = now;
+    gScreenDirty = true;
+  }
+  gWhiteLatch = whiteDown;
+
+  if (!gExportAborted && digitalRead(kRedButtonPin) == LOW) {
+    gExportAborted = true;
+    gExportPaused = false;
+    gLiveExportActive = false;
+    gPendingLiveRows = "";
+    gStatus.scanState = 0;
+    sendScanControl("stop");
+    gScreenDirty = true;
+  }
+
+  if (gScreenDirty || now - gLastExportRedrawMs >= 250) {
+    gLastExportRedrawMs = now;
+    redraw();
+    gScreenDirty = false;
+  }
+}
+
 void typeCharByChar(const String &text) {
-  for (size_t i = 0; i < text.length(); ++i) {
+  for (size_t i = 0; i < text.length() && !gExportAborted; ++i) {
     gBleKeyboard.print(text[i]);
     delay(8);
     // This runs with gTypingInProgress already set by the caller, so any
     // scan_result read here queues into gPendingLiveRows instead of typing
     // (see applyTagReading) - this just keeps the wire UART's hardware RX
     // buffer from overflowing during a long batch export.
-    pollWireSerial();
+    exportYield();
+
+    // Pause after every finished column (tab) and row (newline) so the PC
+    // side has time to keep up. If the white button paused the export it
+    // holds here, at a column boundary, until resumed or cancelled.
+    if (text[i] == '\t' || text[i] == '\n') {
+      const uint32_t start = millis();
+      while (!gExportAborted && (gExportPaused || millis() - start < kColumnDelayMs)) {
+        delay(10);
+        exportYield();
+      }
+    }
   }
 }
 
@@ -381,26 +452,40 @@ void flushPendingLiveRows() {
   String rows = gPendingLiveRows;
   gPendingLiveRows = "";
   gTypingInProgress = true;
+  gExportAborted = false;
   typeCharByChar(rows);
   gTypingInProgress = false;
   flushPendingLiveRows(); // more may have queued while flushing these
 }
 
 // Types the export table as tab-separated rows into whatever text field is
-// focused on the paired PC, via the BLE HID keyboard link.
+// focused on the paired PC, via the BLE HID keyboard link. Rows added by
+// tags arriving mid-export are not part of this batch - they are typed
+// live right after it (see applyTagReading).
 void typeLogOverBleKeyboard() {
   gTypingInProgress = true;
+  gExportAborted = false;
+  gExportPaused = false;
+  gBatchExporting = true;
+  gExportTotal = gExportLogSize;
+  gExportDone = 0;
+  gWhiteLatch = true; // the press that started the export is still down
+  gScreenDirty = true;
+
   typeCharByChar("channel\tepc\trssi_dbm\tcount\tage_s\n");
   delay(40);
   uint32_t now = millis();
-  for (size_t i = 0; i < gExportLogSize; ++i) {
+  for (size_t i = 0; i < gExportTotal && !gExportAborted; ++i) {
     const ExportEntry &entry = gExportLog[i];
     uint32_t ageS = (now - entry.lastSeenMs) / 1000;
     String row = String(entry.channel) + '\t' + entry.epc + '\t' + String(entry.rssi) + '\t' +
                  String(entry.count) + '\t' + String(ageS) + '\n';
     typeCharByChar(row);
+    gExportDone = i + 1;
+    gScreenDirty = true;
     delay(40);
   }
+  gBatchExporting = false;
 
   // A single dropped "key released" notification leaves the PC thinking a
   // key is still held down, which spams autorepeat forever - this one
@@ -448,10 +533,20 @@ void pollExportButton() {
     typeLogOverBleKeyboard();
   }
 
+  if (gExportAborted) {
+    // Cancelled with red: keep the log so the rest can be exported again.
+    gStatusMessage = "Export cancelled at " + String(gExportDone) + "/" + String(gExportTotal);
+    Serial.printf("[EXPORT] cancelled at %u/%u\n", static_cast<unsigned>(gExportDone),
+                  static_cast<unsigned>(gExportTotal));
+    gStatusMessageUntilMs = millis() + kStatusMessageMs;
+    gScreenDirty = true;
+    return;
+  }
+
   gExportLogSize = 0; // next batch starts fresh
-  gStatusMessage = "Export started (" + String(exported) + " rows)";
+  gStatusMessage = "Exported " + String(exported) + " rows";
   Serial.printf("[EXPORT] live mode on, sent %u rows\n", static_cast<unsigned>(exported));
-  gStatusMessageUntilMs = now + kStatusMessageMs;
+  gStatusMessageUntilMs = millis() + kStatusMessageMs;
   gScreenDirty = true;
 }
 
@@ -578,11 +673,19 @@ void drawChannelCard(int x, int y, int w, int h, uint8_t channel) {
 void drawLogCountBox(int x, int y, int w, int h) {
   gScreen.drawRoundRect(x, y, w, h, 4, TFT_DARKGREY);
   gScreen.setTextDatum(TC_DATUM);
-  gScreen.setTextColor(TFT_CYAN, TFT_BLACK);
-  gScreen.drawString("LOG", x + w / 2, y + 4, 2);
+  if (gBatchExporting) {
+    // During a batch export the big number is the row typed so far.
+    gScreen.setTextColor(gExportPaused ? TFT_ORANGE : TFT_GREEN, TFT_BLACK);
+    String label = String(gExportPaused ? "PAUSED" : "EXPORTING") + " / " + String(gExportTotal);
+    gScreen.drawString(label, x + w / 2, y + 4, 2);
+  } else {
+    gScreen.setTextColor(TFT_CYAN, TFT_BLACK);
+    gScreen.drawString("LOG", x + w / 2, y + 4, 2);
+  }
 
   char buf[8];
-  snprintf(buf, sizeof(buf), "%03u", static_cast<unsigned>(gExportLogSize));
+  snprintf(buf, sizeof(buf), "%03u",
+           static_cast<unsigned>(gBatchExporting ? gExportDone : gExportLogSize));
   String countStr(buf);
 
   // Always zero-padded to 3 digits ("000".."512") - pick the largest font
@@ -627,6 +730,18 @@ void redraw() {
   gScreen.drawString("RFID Monitor", 4, 2, 2);
 
   gScreen.fillCircle(220, 8, 4, gBleKeyboard.isConnected() ? TFT_GREEN : TFT_DARKGREY);
+
+  // Pi link: LINKED = valid frame within the timeout, GARBLED = bytes are
+  // arriving but none parse (check baud/polarity/noise), NO LINK = silence.
+  const uint32_t nowMs = millis();
+  const bool frameOk = gHeardPiFrame && nowMs - gLastPiFrameMs < kPiLinkTimeoutMs;
+  const bool bytesOk = gHeardPiByte && nowMs - gLastPiByteMs < kPiLinkTimeoutMs;
+  const uint16_t piColor = frameOk ? TFT_GREEN : (bytesOk ? TFT_ORANGE : TFT_RED);
+  const char *piText = frameOk ? "Pi LINKED" : (bytesOk ? "Pi GARBLED" : "Pi NO LINK");
+  gScreen.fillCircle(232, 8, 4, piColor);
+  gScreen.setTextDatum(TL_DATUM);
+  gScreen.setTextColor(piColor, TFT_BLACK);
+  gScreen.drawString(piText, 104, 5, 1);
 
   gScreen.setTextDatum(TR_DATUM);
   gScreen.setTextColor(TFT_YELLOW, TFT_BLACK);

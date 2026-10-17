@@ -137,6 +137,10 @@ these five are ignored.
   channel 1, HIGH = channel 2**. Every change is also sent to the Pi as
   `scan_control` `select`.
 
+- The header shows the Pi link state next to a matching dot: `Pi LINKED`
+  (a valid JSON frame arrived within 2s), `Pi GARBLED` (bytes arrive but
+  none parse - check baud/A+ A- polarity/noise) or `Pi NO LINK` (silence).
+
 ## Panel buttons and GPIO pins
 
 | GPIO | Physical control | Function |
@@ -201,6 +205,11 @@ is still unspecified.
 - While live-export mode is on, every new `scan_result` from the Pi is
   typed into the BLE keyboard immediately, one tag at a time, instead of
   waiting for the next export button press.
+- While the table is being typed, the screen shows progress (`EXPORTING /
+  total`, big number = rows typed so far). A pause of 2.5s follows every
+  column and row. Pressing white again **pauses**, and again **resumes**
+  (taking effect at the next column boundary, label turns to `PAUSED`);
+  pressing red cancels the export (log kept so it can be re-exported).
 - Pressing the red/stop button turns live-export mode back off (as well
   as sending `stop` to the Pi).
 - Typing paces one character every 8ms and inserts a tab between fields

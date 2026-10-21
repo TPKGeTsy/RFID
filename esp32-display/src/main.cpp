@@ -77,7 +77,7 @@ constexpr uint32_t kPeriodicRedrawMs = 500;
 constexpr uint32_t kStatusMessageMs = 3000;
 constexpr uint32_t kClearHoldMs = 1500;
 constexpr size_t kMaxExportEntries = 512;
-constexpr uint32_t kColumnDelayMs = 2500; // pause after each column typed over the BLE keyboard
+constexpr uint32_t kColumnDelayMs = 0; // extra pause after each line typed over the BLE keyboard (0 = as fast as the BLE pacing allows)
 
 BleKeyboard gBleKeyboard(kBleKeyboardName, "LilyGo", 100);
 HardwareSerial gWireSerial(2);
@@ -234,7 +234,7 @@ void applyTagReading(uint8_t antenna, const char *epc, int rssi, uint32_t count)
   }
 
   if (gLiveExportActive && gBleKeyboard.isConnected()) {
-    String row = String(channel) + '\t' + epc + '\t' + String(rssi) + '\t' + String(count) + '\n';
+    String row = String(epc) + '\n'; // EPC only, like a barcode/QR scanner: code then Enter
     if (gTypingInProgress) {
       // A type (single row or full-table export) is already running and is
       // draining the wire UART itself - queue this row instead of typing it
@@ -472,14 +472,10 @@ void typeLogOverBleKeyboard() {
   gWhiteLatch = true; // the press that started the export is still down
   gScreenDirty = true;
 
-  typeCharByChar("channel\tepc\trssi_dbm\tcount\tage_s\n");
-  delay(40);
-  uint32_t now = millis();
+  // EPC only, one per line, like a barcode/QR scanner: code then Enter.
   for (size_t i = 0; i < gExportTotal && !gExportAborted; ++i) {
     const ExportEntry &entry = gExportLog[i];
-    uint32_t ageS = (now - entry.lastSeenMs) / 1000;
-    String row = String(entry.channel) + '\t' + entry.epc + '\t' + String(entry.rssi) + '\t' +
-                 String(entry.count) + '\t' + String(ageS) + '\n';
+    String row = String(entry.epc) + '\n';
     typeCharByChar(row);
     gExportDone = i + 1;
     gScreenDirty = true;

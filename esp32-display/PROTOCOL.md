@@ -200,11 +200,12 @@ is still unspecified.
   no-op (a status message explains why: "Stop scanning before export" or
   "No data to export"). When it does fire: sends `scan_control export` to
   the Pi, types the table so far into the BLE keyboard link if a PC is
-  paired there (tab-separated rows, one per logged tag), clears the
-  table for a fresh batch, and turns on **live-export mode**.
+  paired there (**EPC only**, one per line followed by Enter, like a
+  barcode/QR scanner - no header, no channel/RSSI/count columns), clears
+  the table for a fresh batch, and turns on **live-export mode**.
 - While live-export mode is on, every new `scan_result` from the Pi is
-  typed into the BLE keyboard immediately, one tag at a time, instead of
-  waiting for the next export button press.
+  typed into the BLE keyboard immediately as just its EPC + Enter, one
+  tag at a time, instead of waiting for the next export button press.
 - While the table is being typed, the screen shows progress (`EXPORTING /
   total`, big number = rows typed so far). A pause of 2.5s follows every
   column and row. Pressing white again **pauses**, and again **resumes**
@@ -212,8 +213,8 @@ is still unspecified.
   pressing red cancels the export (log kept so it can be re-exported).
 - Pressing the red/stop button turns live-export mode back off (as well
   as sending `stop` to the Pi).
-- Typing paces one character every 8ms and inserts a tab between fields
-  so a focused spreadsheet cell fills in column-by-column; a final
+- Typing paces one character every 8ms, and every line ends with Enter
+  so a focused spreadsheet fills down one cell per tag; a final
   `releaseAll()` (retried 3 times) guards against a dropped BLE
   notification leaving a key stuck down.
 

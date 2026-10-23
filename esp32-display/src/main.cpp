@@ -278,6 +278,7 @@ void handlePing() {
   JsonDocument reply;
   reply["type"] = "pong";
   reply["ts"] = static_cast<uint32_t>(millis());
+  reply["gate"] = gCurrentChannel;  // lets the Pi learn the channel at boot / after a reconnect
   sendJsonToPi(reply);
 }
 

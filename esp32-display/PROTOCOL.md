@@ -80,12 +80,14 @@ older firmware.
 
 ```json
 {"type":"ping","ts":1730000000000}
-{"type":"pong","ts":1730000000000}
+{"type":"pong","ts":1730000000000,"gate":1}
 ```
 
-The ESP32 answers every `ping` with a `pong` immediately, echoing nothing
-back but its own `millis()` timestamp. The Pi can use missed `pong`s to
-detect a stalled link.
+The ESP32 answers every `ping` with a `pong` immediately, carrying its own
+`millis()` timestamp and `gate` (the channel currently selected on GPIO25,
+`1` or `2`) so the Pi can learn the channel at boot or after a reconnect
+without waiting for the switch to change. The Pi can also use missed
+`pong`s to detect a stalled link.
 
 ### `error`
 

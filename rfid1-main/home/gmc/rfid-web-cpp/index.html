@@ -1,258 +1,896 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RFID Controller</title>
-  <style>
-    :root { font-family: Arial, sans-serif; color: #18202b; background: #eef2f5; }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: #eef2f5; overflow: hidden; }
-    button, input, select { font: inherit; }
-    .display-tools { position: absolute; top: 22px; right: 26px; z-index: 12; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(148, 163, 184, .55); border-radius: 10px; background: rgba(255, 255, 255, .8); box-shadow: 0 8px 20px rgba(15, 23, 42, .12); backdrop-filter: blur(8px); }
-    .display-tools label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
-    .display-tools select { width: 58px; min-width: 58px; padding: 7px 5px; }
-    .display-tools input { width: 16px; height: 16px; accent-color: #2563eb; }
-    .night-toggle { border: 1px solid #94a3b8; border-radius: 7px; padding: 8px 12px; color: #18202b; background: #fff; cursor: pointer; font-weight: 700; }
-    .night-mode .night-toggle { color: #e2e8f0; background: #0f172a; border-color: #64748b; }
-    .night-mode body { color: #e2e8f0; background: #0f172a; }
-    .night-mode .display-tools { color: #e2e8f0; background: rgba(15, 23, 42, .86); border-color: #475569; }
-    .night-mode .brand { color: #e2e8f0; text-shadow: 0 1px 2px #0f172a; }
-    .night-mode .page { background: rgba(30, 41, 59, .97); box-shadow: 0 18px 40px rgba(0, 0, 0, .4); }
-    .night-mode .panel, .night-mode .antenna-card { color: #e2e8f0; background: #1e293b; border-color: #475569; }
-    .night-mode .back, .night-mode input, .night-mode select { color: #e2e8f0; background: #0f172a; border-color: #64748b; }
-    .night-mode th { color: #e2e8f0; background: #334155; }
-    .night-mode th, .night-mode td { border-color: #475569; }
-    .night-mode .muted { color: #cbd5e1; }
-    .night-mode .title-card { color: #f1f5f9; text-shadow: 0 2px 18px rgba(15, 23, 42, .85); }
-    .app { height: 100vh; display: block; }
-    .menu { position: absolute; inset: 0; z-index: 5; pointer-events: none; transform: translate3d(var(--scene-x, 0px), var(--scene-y, 0px), 0); transition: transform .16s ease-out; }
-    .brand { position: absolute; top: 24px; left: 28px; margin: 0; color: #17212b; font-size: 20px; text-shadow: 0 1px 2px #fff; }
-    .menu-button { position: absolute; border: 0; border-radius: 8px; padding: 13px 14px; color: #fff; cursor: pointer; font-weight: 700; text-align: left; box-shadow: 0 5px 14px rgba(15, 23, 42, .2); pointer-events: auto; transition: transform .2s ease, box-shadow .2s ease; }
-    .menu-button.antenna { top: 250px; left: 500px; }
-    .menu-button.status { top: 200px; left: 800px; }
-    .menu-button.network { top: 500px; left: 900px; }
-    .menu-button.antenna { background: #0f766e; }
-    .menu-button.status { background: #b45309; }
-    .menu-button.network { background: #2563eb; }
-    .menu-button.active { outline: 3px solid #fff; outline-offset: 2px; }
-    .workspace { position: relative; width: 100%; height: 100vh; padding: 24px; overflow: hidden; perspective: 1100px; }
-    .home { position: absolute; left: 34px; bottom: 34px; width: 300px; text-align: left; z-index: 2; transform: translate3d(var(--scene-x, 0px), var(--scene-y, 0px), 0); transition: transform .16s ease-out; }
-    .hero { height: 100%; display: grid; place-items: center; text-align: center; position: relative; }
-    .hero-image { width: min(600px, 46vw); max-height: 75vh; object-fit: contain; filter: drop-shadow(0 24px 24px rgba(15, 23, 42, .2)); transform: translate3d(var(--image-x, 0px), var(--image-y, 0px), 0) rotateX(var(--image-rx, 0deg)) rotateY(var(--image-ry, 0deg)); transition: filter .38s ease; }
-    .title-card { position: absolute; inset: 0; z-index: 9; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; text-align: center; padding: 0 24px; font-size: clamp(30px, 6vw, 68px); font-weight: 800; letter-spacing: .02em; color: #17212b; text-shadow: 0 2px 18px rgba(255, 255, 255, .65); }
-    .title-card.show { animation: title-card-pulse .5s ease both; }
-    @keyframes title-card-pulse { 0% { opacity: 0; transform: translateY(14px) scale(.96); } 45%, 55% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-14px) scale(1.02); } }
-    .hero-image.hero-zoom-out { animation: hero-zoom-fade-out .45s ease forwards; }
-    @keyframes hero-zoom-fade-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.2); } }
-    .hero-image.hero-fade-in { animation: hero-fade-in .45s ease forwards; }
-    @keyframes hero-fade-in { from { opacity: 0; } to { opacity: 1; } }
-    .page { position: absolute; top: 24px; bottom: 24px; width: min(560px, 36vw); margin: 0; padding: 22px; border-radius: 14px; background: rgba(255, 255, 255, .97); box-shadow: 0 18px 40px rgba(15, 23, 42, .2); overflow: hidden; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) rotateX(var(--panel-rx, 0deg)) rotateY(var(--panel-ry, 0deg)); transition: opacity .3s ease, transform .18s ease-out, box-shadow .3s ease; }
-    .page[hidden] { display: block; opacity: 0; pointer-events: none; visibility: hidden; }
-    .page:not([hidden]) { animation: drawer-in .38s cubic-bezier(.2, .8, .2, 1) both; }
-    @keyframes drawer-in { from { opacity: 0; transform: translate3d(0, 24px, 0) scale(.97); } to { opacity: 1; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) scale(1); } }
-    .page.panel-leaving { animation: panel-fade-out .3s ease forwards; pointer-events: none; }
-    @keyframes panel-fade-out { from { opacity: 1; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) scale(1); } to { opacity: 0; transform: translate3d(var(--panel-x, 0px), var(--panel-y, 0px), 0) scale(.97); } }
-    .page#antenna-page, .page#network-page { left: 24px; border-right: 6px solid #0f766e; }
-    .page#network-page { border-right-color: #2563eb; }
-    .page#status-page { right: 24px; border-left: 6px solid #b45309; overflow-y: auto; }
-    .page-head { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
-    .page-head h1 { margin: 0; font-size: 28px; }
-    .back { border: 1px solid #aab3bf; background: #fff; border-radius: 6px; padding: 9px 15px; cursor: pointer; }
-    .panel { border: 1px solid #d9dee5; border-radius: 10px; padding: 18px; background: #fff; }
-    .home .panel { border: 0; background: #b91c1c; color: #fff; box-shadow: 0 16px 30px rgba(127, 29, 29, .28); }
-    .home .panel h1 { margin-top: 0; }
-    .home .panel select { border-color: #fecaca; }
-    .home .green { background: #7f1d1d; }
-    .home .orange { background: #ef4444; }
-    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 14px; }
-    label { display: grid; gap: 6px; font-size: 14px; font-weight: 700; }
-    input, select { width: 100%; border: 1px solid #aab3bf; border-radius: 5px; padding: 10px; background: #fff; }
-    .button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-    .action { border: 0; border-radius: 6px; padding: 10px 15px; color: #fff; cursor: pointer; font-weight: 700; }
-    .blue { background: #2563eb; }
-    .green { background: #15803d; }
-    .orange { background: #b45309; }
-    .gray { background: #475569; }
-    .muted { color: #64748b; font-size: 13px; }
-    .home .muted, .home .message { color: #fee2e2; }
-    .antenna-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
-    .antenna-card { border: 1px solid #d9dee5; border-radius: 7px; padding: 13px; }
-    .antenna-card h3 { margin: 0 0 10px; font-size: 15px; }
-    .status-dot { width: 14px; height: 14px; display: inline-block; border-radius: 50%; background: #dc2626; vertical-align: middle; margin-right: 7px; }
-    .status-dot.green-dot { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .18), 0 0 14px rgba(34, 197, 94, .9); animation: antenna-blink .8s ease-in-out infinite; }
-    .buffer-active { color: #15803d; font-weight: 700; }
-    .buffer-panel { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; border: 2px solid #94a3b8; border-radius: 9px; padding: 14px; background: #f8fafc; }
-    .buffer-panel.running { border-color: #22c55e; background: #f0fdf4; }
-    .buffer-panel h3 { margin: 0 0 5px; }
-    .buffer-panel .action { white-space: nowrap; }
-    .night-mode .buffer-panel { color: #f8fafc; background: #1e293b; border-color: #64748b; }
-    .night-mode .buffer-panel.running { background: #14532d; border-color: #4ade80; }
-    .night-mode .buffer-panel .muted { color: #cbd5e1; }
-    .night-mode .buffer-active { color: #86efac; }
-    @keyframes antenna-blink { 0%, 100% { opacity: .45; transform: scale(.88); } 50% { opacity: 1; transform: scale(1.12); } }
-    .log-tools { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 15px; }
-    .log-tools label { min-width: 190px; }
-    .table-wrap { overflow: auto; max-height: 420px; border: 1px solid #d9dee5; }
-    table { width: 100%; border-collapse: collapse; min-width: 650px; }
-    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px; text-align: left; white-space: nowrap; }
-    th { position: sticky; top: 0; background: #f2f4f7; }
-    .message { margin: 14px 0 0; min-height: 20px; font-size: 13px; }
-    @media (max-width: 760px) { body { overflow: auto; } .brand { top: 14px; left: 18px; font-size: 17px; } .menu-button { padding: 11px 12px; } .menu-button.antenna { top: 54px; left: 14px; } .menu-button.status { top: 102px; left: 40px; } .menu-button.network { top: 150px; left: 14px; } .workspace { height: 100vh; min-height: 560px; } .hero-image { width: min(500px, 72vw); } .home { left: 18px; bottom: 18px; width: 270px; } .page { top: 18px; right: 18px; bottom: 18px; width: calc(100% - 36px); } .form-grid, .antenna-cards { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 480px) { .workspace { padding: 12px; } .form-grid, .antenna-cards { grid-template-columns: 1fr; } .page-head h1 { font-size: 22px; } .home { left: 12px; right: 12px; bottom: 12px; width: auto; } .page { top: 12px; right: 12px; bottom: 12px; width: calc(100% - 24px); } }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RFID Controller</title>
+<style>
+  :root {
+    --bg: #f3f5f8; --card: #fff; --line: #dde2e9; --text: #17202b; --muted: #687587;
+    --accent: #2563eb; --ok: #16a34a; --warn: #d97706; --bad: #dc2626; --chip: #eef1f5;
+    --a1: #0ea5e9; --a2: #8b5cf6; --a3: #f59e0b; --a4: #ec4899;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f141b; --card: #171e28; --line: #2a3442; --text: #e6ebf2; --muted: #93a0b2;
+    --accent: #60a5fa; --chip: #222b38; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif; background: var(--bg); color: var(--text); }
+  button, input, select { font: inherit; color: inherit; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; }
+  .brand { font-weight: 800; font-size: 18px; margin-right: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; background: var(--chip); font-size: 13px; white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+  .dot.live { animation: blink .9s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .spacer { flex: 1; }
+  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 600; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .btn.blue { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  select, input { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 7px 9px; }
+  input[type=number] { width: 80px; }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  nav { display: flex; gap: 2px; padding: 0 12px; overflow-x: auto; }
+  nav button { border: 0; background: none; padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; white-space: nowrap; }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  main { padding: 16px; max-width: 1280px; margin: 0 auto; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 12px; font-size: 17px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .ants { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .ant { border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 10px; padding: 10px 12px; }
+  .ant b { display: block; }
+  .tablewrap { overflow: auto; max-height: 60vh; border: 1px solid var(--line); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--chip); font-size: 13px; }
+  td.mono, .mono { font-family: ui-monospace, Consolas, monospace; }
+  tr.grp-alt td { background: color-mix(in srgb, var(--chip) 60%, transparent); }
+  tr.grp-start td { border-top: 2px solid var(--line); }
+  td.grp-epc { vertical-align: top; font-weight: 600; }
+  .msg { min-height: 22px; margin: 10px 0 0; font-size: 14px; }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+  .tag-a { display: inline-block; width: 22px; text-align: center; border-radius: 6px; color: #fff; font-size: 12px; font-weight: 700; }
+  /* 3D */
+  .view3d { display: grid; grid-template-columns: 1fr 320px; gap: 14px; }
+  #scene { width: 100%; height: 62vh; min-height: 360px; display: block; border-radius: 12px; background: var(--card); border: 1px solid var(--line); cursor: grab; touch-action: none; }
+  #scene:active { cursor: grabbing; }
+  .near-list { max-height: 62vh; overflow: auto; }
+  .near-item { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 8px 4px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .near-item .bar { grid-column: 1 / -1; height: 6px; border-radius: 4px; background: var(--chip); padding: 0; overflow: hidden; }
+  .near-item .bar i { display: block; height: 100%; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; margin-top: 8px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 5px; vertical-align: -1px; }
+  /* write */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  label.f { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+  label.f input, label.f select { width: 100%; }
+  .seen { display: grid; gap: 6px; margin-top: 10px; }
+  .seen label { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .seen label:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  @media (max-width: 900px) { .view3d { grid-template-columns: 1fr; } .ants { grid-template-columns: repeat(2, 1fr); } #scene { height: 50vh; } }
+</style>
 </head>
 <body>
-  <div class="app">
-    <div class="display-tools" aria-label="Display settings">
-      <label><button id="night-mode-button" class="night-toggle" type="button">Night</button><input id="night-mode" type="checkbox" hidden></label>
-      <label><span class="language-label" hidden>Language</span><select id="language-select" aria-label="Language"><option value="en">EN</option><option value="zh">中</option></select></label>
-    </div>
-    <nav class="menu" aria-label="Main menu">
-      <h2 class="brand">RFID Controller</h2>
-      <button class="menu-button antenna" data-page="antenna-page" data-image="/assets/antenna.png" data-label-en="Antenna" data-label-zh="天线">Antenna</button>
-      <button class="menu-button status" data-page="status-page" data-image="/assets/Status.png" data-label-en="Status" data-label-zh="状态">Status</button>
-      <button class="menu-button network" data-page="network-page" data-image="/assets/Network.png" data-label-en="Network" data-label-zh="网络">Network</button>
-    </nav>
-    <main class="workspace">
-      <div class="hero">
-        <img id="main-image" class="hero-image" src="/assets/Main.png" alt="RFID reader">
-        <div id="title-card" class="title-card" aria-hidden="true"></div>
-      </div>
-      <section id="home-page" class="home page-view">
-        <div class="panel"><h1>RFID Reader</h1><label><span id="scan-mode-label">Scan Mode</span> <select id="scan-mode"><option value="continuous">Continuous</option><option value="buffer">Buffer (1 sec / 800 tags)</option><option value="manual">Manual Start / Stop</option></select></label><p id="scan-message" class="message">Scan stopped</p><div class="button-row"><button id="start-scan" class="action green" type="button">Start Scan</button><button id="stop-scan" class="action orange" type="button">Stop Scan</button></div></div>
-      </section>
-      <section id="antenna-page" class="page page-view" hidden>
-        <div class="page-head"><button class="back" data-page="home-page">Back</button><h1>Antenna</h1></div>
-        <div class="panel">
-          <div class="antenna-cards">
-            <div class="antenna-card"><h3>Antenna 1</h3><span class="status-dot" data-status-dot="1"></span><span data-status-label="1">No RFID</span></div>
-            <div class="antenna-card"><h3>Antenna 2</h3><span class="status-dot" data-status-dot="2"></span><span data-status-label="2">No RFID</span></div>
-            <div class="antenna-card"><h3>Antenna 3</h3><span class="status-dot" data-status-dot="3"></span><span data-status-label="3">No RFID</span></div>
-            <div class="antenna-card"><h3>Antenna 4</h3><span class="status-dot" data-status-dot="4"></span><span data-status-label="4">No RFID</span></div>
-          </div>
-          <h2>RF Power / TX Power</h2>
-          <div class="form-grid">
-            <label><span>Antenna</span> <select><option>All antennas</option><option>Antenna 1</option><option>Antenna 2</option><option>Antenna 3</option><option>Antenna 4</option></select></label>
-            <label id="read-power-label"><span>Read Power (dBm)</span> <input id="read-power" type="number" min="0" max="40" value="15"></label>
-            <label id="write-power-label"><span>Write Power (dBm)</span> <input id="write-power" type="number" min="0" max="40" value="15"></label>
-            <label id="endpoint-label"><span>API endpoint</span> <input placeholder="http://192.168.10.111:3000"></label>
-          </div>
-          <div class="button-row"><button id="save-antenna-settings" class="action green" type="button">Save antenna settings</button></div><p id="antenna-message" class="message"></p>
-          <p class="muted">ภาพอยู่ด้านบน, สถานะเสาอยู่ใต้ภาพ, ฟอร์ม power และ API อยู่ส่วนล่าง</p>
-        </div>
-      </section>
-      <section id="status-page" class="page page-view" hidden>
-        <div class="page-head"><button class="back" data-page="home-page">Back</button><h1>Status</h1></div>
-        <div class="panel">
-          <div class="log-tools"><label><span id="read-from-label">Read from antenna</span> <select id="log-antenna"><option value="all">All antennas</option><option value="1">Antenna 1</option><option value="2">Antenna 2</option><option value="3">Antenna 3</option><option value="4">Antenna 4</option></select></label><button id="view-log" class="action orange" type="button">View log</button><button id="refresh-log" class="action orange" type="button" hidden>Refresh log</button><button id="clear-log" class="action gray" type="button" hidden>Clear</button></div>
-          <p id="status-message" class="message">Checking Reader status...</p>
-          <div id="buffer-panel" class="buffer-panel"><div><h3>Buffer mode</h3><span id="buffer-status">Stopped</span><span class="muted"> <span id="buffer-rate">Not active</span></span></div><div class="button-row"><button id="view-buffer-log" class="action gray" type="button" hidden>View Buffer Log</button><button id="clear-buffer-log" class="action orange" type="button" hidden>Clear Buffer Log</button><button id="back-buffer-log" class="back" type="button" hidden>Back</button></div></div>
-          <div class="antenna-cards"><div class="antenna-card"><h3>Antenna 1</h3><span class="status-dot" data-status-dot="1"></span><span data-status-label="1">Unknown</span></div><div class="antenna-card"><h3>Antenna 2</h3><span class="status-dot" data-status-dot="2"></span><span data-status-label="2">Unknown</span></div><div class="antenna-card"><h3>Antenna 3</h3><span class="status-dot" data-status-dot="3"></span><span data-status-label="3">Unknown</span></div><div class="antenna-card"><h3>Antenna 4</h3><span class="status-dot" data-status-dot="4"></span><span data-status-label="4">Unknown</span></div></div>
-          <div id="log-view" class="table-wrap" hidden><table><thead><tr><th>Timestamp</th><th>Antenna</th><th>EPC</th><th>RSSI</th><th>Count</th></tr></thead><tbody id="status-log"><tr><td colspan="5" class="muted">Press View log to load readings</td></tr></tbody></table></div>
-          <p class="muted">ภาพอยู่ด้านบน, ตัวกรองเสาและปุ่ม refresh อยู่ก่อนตาราง, log แสดง EPC/RSSI/Timestamp ด้านล่าง</p>
-        </div>
-      </section>
-      <section id="network-page" class="page page-view" hidden>
-        <div class="page-head"><button class="back" data-page="home-page">Back</button><h1>Network</h1></div>
-        <div class="panel"><div class="form-grid"><label><span>IP Address</span> <input id="ip" placeholder="192.168.1.10"></label><label><span>Gateway</span> <input id="gateway" placeholder="192.168.1.1"></label></div><div class="button-row"><button id="refresh-network" class="action gray" type="button">Refresh</button><button id="save-network" class="action blue" type="button">Save IP &amp; Gateway</button></div><p id="network-message" class="message">Loading network...</p><p class="muted">ภาพอยู่ด้านบน, ช่อง IP/Gateway อยู่ใต้ภาพ, ปุ่มบันทึกอยู่ด้านล่าง</p></div>
-      </section>
-    </main>
+<header>
+  <div class="bar">
+    <span class="brand">RFID</span>
+    <span class="pill"><span id="dot-reader" class="dot"></span><span data-t="reader">Reader</span></span>
+    <span class="pill"><span id="dot-esp" class="dot"></span>ESP32</span>
+    <span class="pill"><span id="dot-scan" class="dot"></span><span id="scan-text">-</span></span>
+    <span class="pill" id="tag-count">0 tags</span>
+    <span class="pill" id="ch-pill" title="Channel">CH -</span>
+    <select id="gate-mode" title="Channel">
+      <option value="-1" data-t="gateAuto">CH: ESP32</option>
+      <option value="1">CH1 (A1, A2)</option>
+      <option value="2">CH2 (A3, A4)</option>
+      <option value="0" data-t="gateAll">All antennas</option>
+    </select>
+    <span class="spacer"></span>
+    <select id="scan-mode" title="Scan mode">
+      <option value="continuous" data-t="modeNormal">Normal</option>
+      <option value="buffer" data-t="modeBuffer">Buffer (fast)</option>
+    </select>
+    <button id="btn-start" class="btn primary" data-t="start">Start</button>
+    <button id="btn-stop" class="btn danger" data-t="stop">Stop</button>
+    <select id="lang" title="Language"><option value="th">TH</option><option value="en">EN</option><option value="zh">中</option></select>
+    <button id="btn-theme" class="btn" title="Theme">◐</button>
   </div>
-  <script>
-    const views = [...document.querySelectorAll('.page-view')];
-    const menuButtons = [...document.querySelectorAll('.menu-button')];
-    const backButtons = [...document.querySelectorAll('.back')];
-    const mainImage = document.getElementById('main-image');
-    const titleCard = document.getElementById('title-card');
-    const navMenu = document.querySelector('.menu');
-    const HOME_IMAGE = '/assets/Main.png';
-    const ZOOM_OUT_MS = 450;
-    const TITLE_CARD_MS = 500;
-    const FADE_IN_MS = 450;
-    const PANEL_OUT_MS = 300;
-    let currentLanguage = 'en';
-    let isTransitioning = false;
-    const translations = { en: { brand: 'RFID Controller', homeTitle: 'RFID Reader', scanMode: 'Scan Mode', start: 'Start Scan', stop: 'Stop Scan', antenna: 'Antenna', status: 'Status', network: 'Network', back: 'Back', rfPower: 'RF Power / TX Power', readPower: 'Read Power (dBm)', writePower: 'Write Power (dBm)', endpoint: 'API endpoint', viewLog: 'View log', refresh: 'Refresh log', clear: 'Clear', readFrom: 'Read from antenna', ip: 'IP Address', gateway: 'Gateway', refreshNetwork: 'Refresh', saveNetwork: 'Save IP & Gateway', night: 'Night mode', language: 'Language' }, zh: { brand: 'RFID 控制器', homeTitle: 'RFID 读写器', scanMode: '扫描模式', start: '开始扫描', stop: '停止扫描', antenna: '天线', status: '状态', network: '网络', back: '返回', rfPower: '射频功率 / TX 功率', readPower: '读取功率 (dBm)', writePower: '写入功率 (dBm)', endpoint: 'API 地址', viewLog: '查看记录', refresh: '刷新记录', clear: '清除', readFrom: '读取天线', ip: 'IP 地址', gateway: '网关', refreshNetwork: '刷新', saveNetwork: '保存 IP 和网关', night: '夜间模式', language: '语言' } };
-    function wait(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
-    function applyLanguage(language) { currentLanguage = language; const text = translations[language] || translations.en; document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; document.querySelector('.brand').textContent = text.brand; document.querySelector('#home-page h1').textContent = text.homeTitle; document.getElementById('scan-mode-label').textContent = text.scanMode; document.getElementById('start-scan').textContent = text.start; document.getElementById('stop-scan').textContent = text.stop; document.querySelector('.menu-button.antenna').textContent = text.antenna; document.querySelector('.menu-button.status').textContent = text.status; document.querySelector('.menu-button.network').textContent = text.network; document.querySelectorAll('.back').forEach((button) => { button.textContent = text.back; }); document.querySelector('#antenna-page h1').textContent = text.antenna; document.querySelector('#status-page h1').textContent = text.status; document.querySelector('#network-page h1').textContent = text.network; document.querySelector('#antenna-page h2').textContent = text.rfPower; document.getElementById('view-log').textContent = text.viewLog; document.getElementById('refresh-log').textContent = text.refresh; document.getElementById('clear-log').textContent = text.clear; document.getElementById('refresh-network').textContent = text.refreshNetwork; document.getElementById('save-network').textContent = text.saveNetwork; document.querySelector('.language-label').textContent = text.language; document.getElementById('read-from-label').textContent = text.readFrom; document.querySelector('#ip').previousElementSibling.textContent = text.ip; document.querySelector('#gateway').previousElementSibling.textContent = text.gateway; document.querySelector('#read-power-label span').textContent = text.readPower; document.querySelector('#write-power-label span').textContent = text.writePower; document.querySelector('#endpoint-label span').textContent = text.endpoint; localStorage.setItem('rfid-language', language); }
-    const savedLanguage = localStorage.getItem('rfid-language') || 'en';
-    const languageSelect = document.getElementById('language-select');
-    languageSelect.value = savedLanguage;
-    languageSelect.addEventListener('change', () => applyLanguage(languageSelect.value));
-    const nightModeButton = document.getElementById('night-mode-button');
-    function setNightMode(enabled) { document.documentElement.classList.toggle('night-mode', enabled); document.getElementById('night-mode').checked = enabled; nightModeButton.setAttribute('aria-pressed', enabled ? 'true' : 'false'); localStorage.setItem('rfid-night-mode', enabled ? '1' : '0'); }
-    nightModeButton.addEventListener('click', () => setNightMode(!document.getElementById('night-mode').checked));
-    document.getElementById('night-mode').addEventListener('change', (event) => setNightMode(event.target.checked));
-    const nightMode = document.getElementById('night-mode');
-    nightMode.checked = localStorage.getItem('rfid-night-mode') === '1';
-    setNightMode(nightMode.checked);
-    applyLanguage(savedLanguage);
-    function labelFor(pageId) { const key = pageId === 'antenna-page' ? 'antenna' : pageId === 'status-page' ? 'status' : pageId === 'network-page' ? 'network' : ''; const text = translations[currentLanguage] || translations.en; return text[key] || ''; }
-    function afterPageShown(pageId) { if (pageId === 'status-page') { loadStatus(); loadScanStatus(); } if (pageId === 'antenna-page') loadStatus(); }
-    async function openMenuPage(pageId, imagePath) {
-      if (isTransitioning) return;
-      isTransitioning = true;
-      navMenu.hidden = true;
-      mainImage.classList.remove('hero-fade-in');
-      mainImage.classList.add('hero-zoom-out');
-      await wait(ZOOM_OUT_MS);
-      titleCard.textContent = labelFor(pageId);
-      titleCard.classList.add('show');
-      await wait(TITLE_CARD_MS);
-      titleCard.classList.remove('show');
-      mainImage.src = imagePath || HOME_IMAGE;
-      mainImage.classList.remove('hero-zoom-out');
-      mainImage.classList.add('hero-fade-in');
-      await wait(FADE_IN_MS);
-      mainImage.classList.remove('hero-fade-in');
-      views.forEach((view) => { view.hidden = view.id !== pageId; });
-      menuButtons.forEach((button) => button.classList.toggle('active', button.dataset.page === pageId));
-      afterPageShown(pageId);
-      isTransitioning = false;
+  <nav>
+    <button data-tab="scan" class="active" data-t="tabScan">Scan</button>
+    <button data-tab="3d" data-t="tab3d">3D Position</button>
+    <button data-tab="write" data-t="tabWrite">Write Tag</button>
+    <button data-tab="antenna" data-t="tabAntenna">Antennas</button>
+    <button data-tab="network" data-t="tabNetwork">Network</button>
+  </nav>
+</header>
+
+<main>
+  <!-- SCAN -->
+  <section class="tab" id="tab-scan">
+    <div class="card"><div class="ants" id="ant-cards"></div></div>
+    <div class="card">
+      <div class="row" style="margin-bottom:12px">
+        <select id="log-antenna"><option value="0" data-t="allAnt">All antennas</option><option value="ch1">CH1 (A1, A2)</option><option value="ch2">CH2 (A3, A4)</option><option value="1">A1</option><option value="2">A2</option><option value="3">A3</option><option value="4">A4</option></select>
+        <select id="log-source"><option value="normal" data-t="srcNormal">Normal log</option><option value="buffer" data-t="srcBuffer">Buffer log</option></select>
+        <button id="btn-refresh" class="btn" data-t="refresh">Refresh</button>
+        <button id="btn-clear" class="btn" data-t="clear">Clear</button>
+        <button id="btn-csv" class="btn" data-t="csv">Export CSV</button>
+        <span class="spacer"></span>
+        <span class="muted" id="log-info"></span>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>EPC</th><th data-t="ant">Ant</th><th>RSSI</th><th>RSSI max</th><th data-t="count">Count</th><th data-t="time">Time</th></tr></thead>
+        <tbody id="log-body"><tr><td colspan="6" class="muted" data-t="noData">No readings yet</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- 3D -->
+  <section class="tab" id="tab-3d" hidden>
+    <div class="view3d">
+      <div>
+        <div style="position:relative">
+          <canvas id="scene"></canvas>
+          <div class="row" style="position:absolute;top:8px;left:8px;gap:6px">
+            <button class="btn" data-view="3d">3D</button>
+            <button class="btn" data-view="top" data-t="vTop">Top</button>
+            <button class="btn" data-view="front" data-t="vFront">Front</button>
+            <button class="btn" data-view="side" data-t="vSide">Side</button>
+          </div>
+        </div>
+        <div class="legend">
+          <span style="--c:var(--a1)">A1</span><span style="--c:var(--a2)">A2</span><span style="--c:var(--a3)">A3</span><span style="--c:var(--a4)">A4</span>
+          <span style="--c:#22c55e" data-t="near">Near</span><span style="--c:#ef4444" data-t="far">Far</span>
+          <span class="muted" data-t="hint3d">Drag = rotate · Wheel = zoom · Double-click = reset</span>
+        </div>
+      </div>
+      <div class="card" style="margin:0">
+        <h2 data-t="nearest">Nearest first</h2>
+        <div class="row muted" style="margin-bottom:8px">
+          <label class="row"><span data-t="window">Window</span> <select id="win"><option value="1500">1.5 s</option><option value="3000" selected>3 s</option><option value="10000">10 s</option><option value="60000">60 s</option></select></label>
+          <label class="row"><input type="checkbox" id="show-epc" checked> EPC</label>
+          <label class="row"><input type="checkbox" id="show-beam" checked> <span data-t="showBeam">Beams</span></label>
+        </div>
+        <div class="row muted" style="margin-bottom:8px">
+          <label class="row"><span data-t="levelSplit">Level split</span> <input type="number" id="level-split" step="0.05" min="0" max="10" style="width:72px"> m</label>
+          <label class="row"><input type="checkbox" id="show-level" checked> <span data-t="showLevel">Levels</span></label>
+        </div>
+        <div class="row muted" style="margin-bottom:8px">
+          <label class="row"><span data-t="dirName">Gate 1 → 2 means</span> <select id="dir-map"><option value="in" data-t="dirIn">IN</option><option value="out" data-t="dirOut">OUT</option></select></label>
+        </div>
+        <div class="row muted" style="margin-bottom:8px">
+          <label class="row">RSSI <span data-t="near">Near</span> <input type="number" id="rssi-near" style="width:64px"></label>
+          <label class="row"><span data-t="far">Far</span> <input type="number" id="rssi-far" style="width:64px"></label>
+          <label class="row"><input type="checkbox" id="rssi-auto" checked> Auto</label>
+        </div>
+        <div class="near-list" id="near-list"><p class="muted" data-t="noTags3d">No tags - press Start</p></div>
+      </div>
+    </div>
+    <p class="muted" data-t="note3d">Position is an estimate from RSSI of each antenna (stronger = closer). Set antenna positions in the Antennas tab.</p>
+  </section>
+
+  <!-- WRITE -->
+  <section class="tab" id="tab-write" hidden>
+    <div class="card">
+      <h2 data-t="step1">1. Find the tag</h2>
+      <div class="row">
+        <label class="row"><span data-t="ant">Ant</span> <select id="w-ant"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+        <label class="row"><span data-t="writePower">Write power</span> <input type="number" id="w-power" min="0" max="33"> dBm</label>
+        <button id="btn-probe" class="btn blue" data-t="probe">Find tags</button>
+      </div>
+      <div class="seen" id="w-seen"></div>
+      <p class="muted" data-t="probeHint">Put only the tag you want to write near the antenna. If several show up, pick one.</p>
+    </div>
+    <div class="card">
+      <h2 data-t="step2">2. Write</h2>
+      <div class="grid2">
+        <label class="f"><span data-t="memory">Memory</span>
+          <select id="w-mem"><option value="epc">EPC</option><option value="user">USER</option></select></label>
+        <label class="f" id="w-ptr-wrap" hidden><span data-t="wordPtr">Start word</span><input type="number" id="w-ptr" value="0" min="0"></label>
+        <label class="f"><span><span data-t="newData">New data (hex)</span> <span class="muted" id="w-len"></span></span>
+          <input id="w-data" class="mono" placeholder="E28011700000020000000001" autocomplete="off" spellcheck="false"></label>
+        <label class="f"><span data-t="password">Access password</span><input id="w-pwd" class="mono" value="00000000" maxlength="8"></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label class="row"><input type="checkbox" id="w-inc"> <span data-t="autoInc">Auto +1 after success (batch)</span></label>
+        <span class="spacer"></span>
+        <button id="btn-write" class="btn primary" data-t="write">Write</button>
+      </div>
+      <p class="msg" id="w-msg"></p>
+    </div>
+    <div class="card">
+      <h2 data-t="history">History</h2>
+      <div class="tablewrap" style="max-height:30vh"><table>
+        <thead><tr><th data-t="time">Time</th><th data-t="ant">Ant</th><th data-t="from">From</th><th data-t="to">To</th><th data-t="result">Result</th></tr></thead>
+        <tbody id="w-hist"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ANTENNA -->
+  <section class="tab" id="tab-antenna" hidden>
+    <div class="card">
+      <h2 data-t="antSettings">Antenna settings</h2>
+      <div class="tablewrap" style="max-height:none"><table>
+        <thead><tr><th data-t="ant">Ant</th><th data-t="enabled">On</th><th data-t="power">Power (dBm)</th><th data-t="applied">Reader now</th><th>X (m)</th><th>Y (m)</th><th>Z (m)</th><th data-t="yaw">Yaw °</th><th data-t="tilt">Tilt °</th><th data-t="beam">Beam °</th></tr></thead>
+        <tbody id="ant-rows"></tbody>
+      </table></div>
+      <div class="row" style="margin-top:12px">
+        <label class="row"><span data-t="setAll">Set all</span> <input type="number" id="all-power" min="0" max="33"></label>
+        <button id="btn-all" class="btn" data-t="apply">Apply</button>
+        <span class="spacer"></span>
+        <button id="btn-save-ant" class="btn primary" data-t="save">Save</button>
+      </div>
+      <p class="msg" id="ant-msg"></p>
+      <p class="muted" data-t="antNote">Saved on the Pi (rfid-config.json) - survives refresh and reboot. "Reader now" = power the reader confirmed during the last scan. Positions are only for the 3D view: X = left/right, Y = real mounting height (floor to antenna centre), used for upper/lower level, Z = along the passage.</p>
+    </div>
+  </section>
+
+  <!-- NETWORK -->
+  <section class="tab" id="tab-network" hidden>
+    <div class="card">
+      <h2 data-t="tabNetwork">Network</h2>
+      <div class="grid2">
+        <label class="f">IP<input id="ip" placeholder="192.168.1.10"></label>
+        <label class="f">Gateway<input id="gateway" placeholder="192.168.1.1"></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="btn-net-load" class="btn" data-t="refresh">Refresh</button>
+        <button id="btn-net-save" class="btn blue" data-t="save">Save</button>
+      </div>
+      <p class="msg" id="net-msg"></p>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const ANT_COLORS = ['var(--a1)', 'var(--a2)', 'var(--a3)', 'var(--a4)'];
+const ANT_HEX = ['#0ea5e9', '#8b5cf6', '#f59e0b', '#ec4899'];
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+// ---------- i18n ----------
+const T = {
+  en: { reader: 'Reader', start: 'Start', stop: 'Stop', modeNormal: 'Normal', modeBuffer: 'Buffer (fast)', tabScan: 'Scan', tab3d: '3D Position', tabWrite: 'Write Tag', tabAntenna: 'Antennas', tabNetwork: 'Network',
+    allAnt: 'All antennas', gateAuto: 'CH: follow ESP32', gateAll: 'All antennas', chOff: 'other channel', chNone: 'CH: all (no ESP32)', srcNormal: 'Normal log', srcBuffer: 'Buffer log', refresh: 'Refresh', clear: 'Clear', csv: 'Export CSV', time: 'Time', ant: 'Ant', count: 'Count', noData: 'No readings yet',
+    near: 'Near', far: 'Far', hint3d: 'Drag = rotate · Right-drag / Shift = pan · Wheel / pinch = zoom · Double-click = reset', vTop: 'Top', vFront: 'Front', vSide: 'Side', nearest: 'Nearest first', window: 'Window', noTags3d: 'No tags - press Start',
+    note3d: 'Position is an estimate from the RSSI at each antenna (stronger = closer). Set antenna positions in the Antennas tab.',
+    step1: '1. Find the tag', writePower: 'Write power', probe: 'Find tags', probeHint: 'Put only the tag you want to write near the antenna. If several show up, pick one.',
+    step2: '2. Write', memory: 'Memory', wordPtr: 'Start word', newData: 'New data (hex)', password: 'Access password', autoInc: 'Auto +1 after success (batch)', write: 'Write',
+    history: 'History', from: 'From', to: 'To', result: 'Result', antSettings: 'Antenna settings', enabled: 'On', power: 'Power (dBm)', applied: 'Reader now', setAll: 'Set all', apply: 'Apply', save: 'Save',
+    antNote: 'Saved on the Pi (rfid-config.json) - survives refresh and reboot. "Reader now" = power the reader confirmed during the last scan. Positions/angles are for the 3D view: X = left/right, Y = real mounting height (floor to antenna centre), used for upper/lower level, Z = along the passage. Yaw (top view): 0 = facing +Z along the passage, 90 = facing right (+X), -90 = facing left. Tilt: + up, - down. Beam = antenna beam width (patch ~60-70).', yaw: 'Yaw °', tilt: 'Tilt °', beam: 'Beam °', showBeam: 'Beams', dirAB: 'Gate 1 → 2', dirBA: 'Gate 2 → 1', dirName: 'Gate 1 → 2 means', dirIn: 'IN', dirOut: 'OUT', dirNone: '-', levelSplit: 'Level split', showLevel: 'Levels', lvUp: 'Upper', lvDown: 'Lower', lvUnsure: 'Unsure', height: 'Height',
+    scanning: 'Scanning', stopped: 'Stopped', detected: 'Tag detected', idle: 'No tag', tags: 'tags', pickTag: 'Pick a target tag first', working: 'Working...', saved: 'Saved' },
+  th: { reader: 'Reader', start: 'เริ่ม', stop: 'หยุด', modeNormal: 'ปกติ', modeBuffer: 'Buffer (เร็ว)', tabScan: 'สแกน', tab3d: 'ตำแหน่ง 3D', tabWrite: 'เขียนแท็ก', tabAntenna: 'เสา', tabNetwork: 'เครือข่าย',
+    allAnt: 'ทุกเสา', gateAuto: 'CH: ตาม ESP32', gateAll: 'ทุกเสา', chOff: 'ไม่ได้อยู่ CH นี้', chNone: 'CH: ทุกเสา (ไม่มี ESP32)', srcNormal: 'Log ปกติ', srcBuffer: 'Log Buffer', refresh: 'รีเฟรช', clear: 'ล้าง', csv: 'ดาวน์โหลด CSV', time: 'เวลา', ant: 'เสา', count: 'จำนวน', noData: 'ยังไม่มีข้อมูล',
+    near: 'ใกล้', far: 'ไกล', hint3d: 'ลาก = หมุน · คลิกขวาลาก / Shift = เลื่อน · ล้อเมาส์ / 2 นิ้ว = ซูม · ดับเบิลคลิก = รีเซ็ต', vTop: 'บน', vFront: 'หน้า', vSide: 'ข้าง', nearest: 'ใกล้สุดก่อน', window: 'ช่วงเวลา', noTags3d: 'ยังไม่มีแท็ก - กดเริ่ม',
+    note3d: 'ตำแหน่งเป็นค่าประมาณจาก RSSI ของแต่ละเสา (แรง = ใกล้) ตั้งตำแหน่งเสาได้ที่แท็บ "เสา"',
+    step1: '1. หาแท็ก', writePower: 'กำลังเขียน', probe: 'ค้นหาแท็ก', probeHint: 'วางเฉพาะแท็กที่จะเขียนไว้ใกล้เสา ถ้าเจอหลายอันให้เลือกเป้าหมาย',
+    step2: '2. เขียน', memory: 'หน่วยความจำ', wordPtr: 'เริ่มที่ word', newData: 'ข้อมูลใหม่ (hex)', password: 'รหัสผ่าน (Access)', autoInc: '+1 อัตโนมัติหลังเขียนสำเร็จ (เขียนทีละหลายอัน)', write: 'เขียน',
+    history: 'ประวัติ', from: 'จาก', to: 'เป็น', result: 'ผล', antSettings: 'ตั้งค่าเสา', enabled: 'เปิด', power: 'กำลัง (dBm)', applied: 'ที่ Reader ใช้จริง', setAll: 'ตั้งทุกเสา', apply: 'ใช้', save: 'บันทึก',
+    antNote: 'บันทึกไว้บน Pi (rfid-config.json) รีเฟรชหน้า/รีบูตค่ายังอยู่ "ที่ Reader ใช้จริง" = ค่าที่ Reader ตอบรับตอนสแกนล่าสุด ตำแหน่ง/มุมใช้กับหน้า 3D: X = ซ้าย/ขวา, Y = ความสูงจริงของเสา (พื้นถึงกลางเสา) ใช้แยกชั้นบน/ล่าง, Z = ตามทางเดิน. Yaw (มองจากบน): 0 = หันตามทางเดิน (+Z), 90 = หันขวา (+X), -90 = หันซ้าย. Tilt: + เงย, - ก้ม. Beam = ความกว้างลำคลื่นเสา (patch ประมาณ 60-70)', yaw: 'หัน °', tilt: 'ก้มเงย °', beam: 'ลำคลื่น °', showBeam: 'ลำคลื่น', dirAB: 'ประตู 1 → 2', dirBA: 'ประตู 2 → 1', dirName: 'ประตู 1 → 2 คือ', dirIn: 'เข้า', dirOut: 'ออก', dirNone: '-', levelSplit: 'แบ่งชั้นที่', showLevel: 'แสดงชั้น', lvUp: 'ชั้นบน', lvDown: 'ชั้นล่าง', lvUnsure: 'ไม่แน่ใจ', height: 'สูง',
+    scanning: 'กำลังสแกน', stopped: 'หยุด', detected: 'เจอแท็ก', idle: 'ไม่มีแท็ก', tags: 'แท็ก', pickTag: 'เลือกแท็กเป้าหมายก่อน', working: 'กำลังทำงาน...', saved: 'บันทึกแล้ว' },
+  zh: { reader: '读写器', start: '开始', stop: '停止', modeNormal: '普通', modeBuffer: '缓冲 (快速)', tabScan: '扫描', tab3d: '3D 位置', tabWrite: '写标签', tabAntenna: '天线', tabNetwork: '网络',
+    allAnt: '全部天线', gateAuto: 'CH: 跟随 ESP32', gateAll: '全部天线', chOff: '非当前通道', chNone: 'CH: 全部 (无 ESP32)', srcNormal: '普通记录', srcBuffer: '缓冲记录', refresh: '刷新', clear: '清除', csv: '导出 CSV', time: '时间', ant: '天线', count: '次数', noData: '暂无数据',
+    near: '近', far: '远', hint3d: '拖动 = 旋转 · 右键/Shift 拖动 = 平移 · 滚轮/双指 = 缩放 · 双击 = 复位', vTop: '俯视', vFront: '正视', vSide: '侧视', nearest: '最近优先', window: '时间窗', noTags3d: '无标签 - 请开始扫描',
+    note3d: '位置根据各天线 RSSI 估算 (越强越近)。天线位置在"天线"页设置。',
+    step1: '1. 查找标签', writePower: '写入功率', probe: '查找标签', probeHint: '只把要写的标签放在天线附近。如果有多个, 请选择目标。',
+    step2: '2. 写入', memory: '存储区', wordPtr: '起始字', newData: '新数据 (hex)', password: '访问密码', autoInc: '成功后自动 +1 (批量)', write: '写入',
+    history: '历史', from: '原', to: '新', result: '结果', antSettings: '天线设置', enabled: '启用', power: '功率 (dBm)', applied: '读写器当前', setAll: '全部设为', apply: '应用', save: '保存',
+    antNote: '保存在 Pi 上 (rfid-config.json), 刷新/重启后保留。"读写器当前" = 上次扫描时读写器确认的功率。位置/角度用于 3D 页: X = 左右, Y = 高度, Z = 通道方向。Yaw (俯视): 0 = 朝 +Z, 90 = 朝右, -90 = 朝左。Tilt: + 上仰, - 下俯。Beam = 波束宽度 (平板天线约 60-70)。', yaw: '水平角 °', tilt: '俯仰 °', beam: '波束 °', showBeam: '波束', dirAB: '门 1 → 2', dirBA: '门 2 → 1', dirName: '门 1 → 2 表示', dirIn: '进', dirOut: '出', dirNone: '-', levelSplit: '分层高度', showLevel: '显示层', lvUp: '上层', lvDown: '下层', lvUnsure: '不确定', height: '高度',
+    scanning: '扫描中', stopped: '已停止', detected: '检测到标签', idle: '无标签', tags: '标签', pickTag: '请先选择目标标签', working: '处理中...', saved: '已保存' },
+};
+let lang = store.get('rfid-lang', (navigator.language || '').startsWith('th') ? 'th' : 'en');
+const t = (k) => (T[lang] && T[lang][k]) || T.en[k] || k;
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t); });
+  $('lang').value = lang;
+  renderAntCards(); renderState();
+}
+$('lang').onchange = () => { lang = $('lang').value; store.set('rfid-lang', lang); applyLang(); };
+
+// ---------- theme ----------
+function setTheme(theme) { document.documentElement.dataset.theme = theme; store.set('rfid-theme', theme); }
+setTheme(store.get('rfid-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+$('btn-theme').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+
+// ---------- helpers ----------
+async function api(path, body) {
+  const opt = body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  const res = await fetch(path, opt);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && data.ok === undefined) throw new Error(data.message || res.statusText);
+  return data;
+}
+function msg(el, text, kind) { el.textContent = text; el.className = 'msg' + (kind ? ' ' + kind : ''); }
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---------- tabs ----------
+let tab = 'scan';
+document.querySelectorAll('nav button').forEach((b) => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== 'tab-' + tab; });
+  if (tab === 'scan') loadLog();
+  if (tab === 'antenna') loadConfig();
+  if (tab === 'network') loadNetwork();
+  if (tab === '3d') resizeScene();
+});
+
+// ---------- state ----------
+let state = null, config = null;
+function renderAntCards() {
+  const box = $('ant-cards');
+  box.innerHTML = [0, 1, 2, 3].map((i) => {
+    const a = state && state.antennas ? state.antennas[i] : null;
+    const on = config ? config.enabled[i] : true;
+    const p = config ? config.powers[i] + ' dBm' : '';
+    const gate = state ? state.gate : 0;
+    const inCh = !gate || (i < 2 ? 1 : 2) === gate;
+    return `<div class="ant" style="--c:${ANT_COLORS[i]};${inCh ? '' : 'opacity:.4'}"><b>A${i + 1} <span class="muted">CH${i < 2 ? 1 : 2} · ${on ? p : 'OFF'}</span></b>
+      <span class="row" style="gap:6px"><span class="dot ${a && a.detected ? 'on live' : ''}"></span>${!inCh ? t('chOff') : a && a.detected ? t('detected') : t('idle')}</span></div>`;
+  }).join('');
+}
+function renderState() {
+  if (!state) return;
+  $('dot-reader').className = 'dot' + (state.reader ? ' on' : '');
+  $('dot-esp').className = 'dot' + (state.esp32 ? ' on' : '');
+  $('dot-scan').className = 'dot' + (state.scanning ? ' on live' : '');
+  $('scan-text').textContent = state.scanning ? `${t('scanning')} (${state.mode})` : t('stopped');
+  $('tag-count').textContent = `${state.tags} ${t('tags')}`;
+  const g = state.gate || 0;
+  $('ch-pill').textContent = g ? `CH${g} · A${g === 1 ? '1, A2' : '3, A4'}` : (state.gate_mode === -1 ? t('chNone') : t('gateAll'));
+  $('ch-pill').style.background = g === 1 ? 'color-mix(in srgb, var(--a1) 25%, var(--chip))' : g === 2 ? 'color-mix(in srgb, var(--a3) 25%, var(--chip))' : '';
+  if (state.gate_mode !== undefined && document.activeElement !== $('gate-mode')) $('gate-mode').value = String(state.gate_mode);
+  $('btn-start').disabled = state.scanning; $('btn-stop').disabled = !state.scanning;
+  renderAntCards();
+  if (tab === 'antenna') renderApplied();
+}
+async function pollState() {
+  try { state = await api('/api/state'); } catch { state = { reader: false, esp32: false, scanning: false, tags: 0, antennas: [] }; }
+  renderState();
+}
+setInterval(pollState, 1000);
+
+async function scan(action) {
+  const mode = $('scan-mode').value;
+  try { await api('/api/scan-control', { action, mode }); } catch (e) { alert(e.message); }
+  await pollState();
+  if (action === 'stop') { $('log-source').value = mode === 'buffer' ? 'buffer' : 'normal'; loadLog(); }
+}
+$('gate-mode').onchange = async () => {
+  try { const r = await api('/api/config', { gate_mode: Number($('gate-mode').value) }); if (r.config) config = r.config; } catch (e) { alert(e.message); }
+  pollState();
+};
+$('btn-start').onclick = () => scan('start');
+$('btn-stop').onclick = () => scan('stop');
+
+// ---------- scan log ----------
+async function loadLog() {
+  const src = $('log-source').value;
+  const ant = $('log-antenna').value;
+  try {
+    const data = await api(src === 'buffer' ? '/api/buffer-log' : '/api/status-log?antenna=0');
+    let rows = data.readings || [];
+    if (ant === 'ch1') rows = rows.filter((r) => r.antenna <= 2);
+    else if (ant === 'ch2') rows = rows.filter((r) => r.antenna >= 3);
+    else if (ant !== '0') rows = rows.filter((r) => String(r.antenna) === ant);
+    // group by EPC: same EPC together, antennas 1..4 inside each group
+    rows.sort((a, b) => (a.epc || '').localeCompare(b.epc || '') || a.antenna - b.antenna);
+    const groups = [];
+    for (const r of rows) { const g = groups[groups.length - 1]; if (g && g.epc === r.epc) g.rows.push(r); else groups.push({ epc: r.epc, rows: [r] }); }
+    $('log-info').textContent = `${groups.length} EPC · ${rows.length} rows`;
+    $('log-body').innerHTML = groups.map((g, gi) => g.rows.map((r, i) => `<tr class="${gi % 2 ? 'grp-alt' : ''} ${i === 0 ? 'grp-start' : ''}">
+      ${i === 0 ? `<td class="mono grp-epc" rowspan="${g.rows.length}">${esc(g.epc)}${g.rows.length > 1 ? `<div class="muted">${g.rows.length} ${t('ant')}</div>` : ''}</td>` : ''}
+      <td><span class="tag-a" style="background:${ANT_HEX[r.antenna - 1] || '#888'}">${r.antenna}</span></td><td>${r.rssi}</td><td>${r.rssi_max ?? ''}</td><td>${r.count}</td><td class="muted">${esc(r.timestamp)}</td></tr>`).join('')).join('')
+      || `<tr><td colspan="6" class="muted">${t('noData')}</td></tr>`;
+  } catch (e) { $('log-info').textContent = e.message; }
+}
+$('btn-refresh').onclick = loadLog;
+$('log-antenna').onchange = loadLog;
+$('log-source').onchange = loadLog;
+$('btn-clear').onclick = async () => { await api($('log-source').value === 'buffer' ? '/api/buffer-clear' : '/api/status-clear', {}); loadLog(); };
+$('btn-csv').onclick = () => { location.href = '/api/export.csv?source=' + $('log-source').value; };
+setInterval(() => { if (tab === 'scan' && state && state.scanning) loadLog(); }, 1000);
+
+// ---------- antenna config ----------
+async function loadConfig() {
+  try { config = await api('/api/config'); } catch (e) { msg($('ant-msg'), e.message, 'bad'); return; }
+  $('w-power').value = config.write_power;
+  renderAntRows(); renderAntCards();
+}
+const ANGLE_DEF = { yaw: [90, -90, 90, -90], tilt: [0, 0, 0, 0], beam: [65, 65, 65, 65] };
+function cfgArr(key, i) { return config && config[key] ? config[key][i] : ANGLE_DEF[key][i]; }
+function renderAntRows() {
+  if (!config) return;
+  $('ant-rows').innerHTML = [0, 1, 2, 3].map((i) => `<tr>
+    <td><span class="tag-a" style="background:${ANT_HEX[i]}">${i + 1}</span></td>
+    <td><input type="checkbox" data-en="${i}" ${config.enabled[i] ? 'checked' : ''}></td>
+    <td><input type="number" min="0" max="33" data-pw="${i}" value="${config.powers[i]}"></td>
+    <td id="applied-${i}" class="muted">-</td>
+    ${[0, 1, 2].map((k) => `<td><input type="number" step="0.1" style="width:72px" data-pos="${i * 3 + k}" value="${config.positions[i * 3 + k]}"></td>`).join('')}
+    <td><input type="number" step="5" style="width:72px" data-yaw="${i}" value="${cfgArr('yaw', i)}"></td>
+    <td><input type="number" step="5" style="width:72px" data-tilt="${i}" value="${cfgArr('tilt', i)}"></td>
+    <td><input type="number" step="5" min="10" max="180" style="width:72px" data-beam="${i}" value="${cfgArr('beam', i)}"></td>
+  </tr>`).join('');
+  renderApplied();
+}
+function renderApplied() {
+  if (!state || !state.antennas || !config) return;
+  state.antennas.forEach((a, i) => {
+    const el = $('applied-' + i); if (!el) return;
+    const want = config.powers[i];
+    if (!config.enabled[i]) el.textContent = 'OFF';
+    else if (a.applied_power < 0) el.textContent = state.scanning ? '✗' : '- (start scan)';
+    else el.textContent = (a.applied_power === want ? '✓ ' : '… ') + a.applied_power + ' dBm';
+  });
+}
+$('btn-all').onclick = () => { const v = $('all-power').value; if (v !== '') document.querySelectorAll('[data-pw]').forEach((el) => { el.value = v; }); };
+$('btn-save-ant').onclick = async () => {
+  const powers = [...document.querySelectorAll('[data-pw]')].map((el) => Number(el.value));
+  if (powers.some((p) => !Number.isInteger(p) || p < 0 || p > 33)) return msg($('ant-msg'), 'Power 0-33 dBm', 'bad');
+  const enabled = [...document.querySelectorAll('[data-en]')].map((el) => el.checked);
+  const positions = [...document.querySelectorAll('[data-pos]')].map((el) => Number(el.value) || 0);
+  const yaw = [...document.querySelectorAll('[data-yaw]')].map((el) => Number(el.value) || 0);
+  const tilt = [...document.querySelectorAll('[data-tilt]')].map((el) => Number(el.value) || 0);
+  const beam = [...document.querySelectorAll('[data-beam]')].map((el) => Number(el.value) || 65);
+  try {
+    const r = await api('/api/config', { powers, enabled, positions, yaw, tilt, beam });
+    if (r.status !== 'success') throw new Error(r.message);
+    config = r.config;
+    msg($('ant-msg'), t('saved') + (r.saved ? '' : ' (RAM only - file write failed)'), r.saved ? 'ok' : 'bad');
+    renderAntRows(); renderAntCards();
+  } catch (e) { msg($('ant-msg'), e.message, 'bad'); }
+};
+
+// ---------- network ----------
+async function loadNetwork() {
+  try { const d = await api('/api/get-ip'); $('ip').value = d.ip || ''; $('gateway').value = d.gateway || ''; msg($('net-msg'), ''); }
+  catch (e) { msg($('net-msg'), e.message, 'bad'); }
+}
+$('btn-net-load').onclick = loadNetwork;
+$('btn-net-save').onclick = async () => {
+  try { const d = await api('/api/update_network', { ip: $('ip').value.trim(), gateway: $('gateway').value.trim() }); msg($('net-msg'), d.message, d.status === 'success' ? 'ok' : 'bad'); }
+  catch (e) { msg($('net-msg'), e.message, 'bad'); }
+};
+
+// ---------- write ----------
+let target = '';
+function renderSeen(list) {
+  if (!list.length) { $('w-seen').innerHTML = `<span class="muted">${t('idle')}</span>`; target = ''; return; }
+  if (!list.some((s) => s.epc === target)) target = list[0].epc;
+  $('w-seen').innerHTML = list.map((s, i) => `<label><input type="radio" name="w-target" value="${esc(s.epc)}" ${s.epc === target ? 'checked' : ''}>
+    <span class="mono" style="flex:1">${esc(s.epc)}</span><span class="muted">RSSI ${s.rssi}${i === 0 ? ' · ' + t('near') : ''}</span></label>`).join('');
+  document.querySelectorAll('[name=w-target]').forEach((r) => r.onchange = () => { target = r.value; if (!$('w-data').value) $('w-data').value = target; updateLen(); });
+  if (!$('w-data').value && $('w-mem').value === 'epc') { $('w-data').value = target; updateLen(); }
+}
+async function savePower() {
+  const p = Number($('w-power').value);
+  if (config && Number.isInteger(p) && p !== config.write_power) { try { const r = await api('/api/config', { write_power: p }); if (r.config) config = r.config; } catch {} }
+  return p;
+}
+$('btn-probe').onclick = async () => {
+  const b = $('btn-probe'); b.disabled = true; msg($('w-msg'), t('working'));
+  try {
+    const power = await savePower();
+    const r = await api('/api/tag/probe', { antenna: Number($('w-ant').value), power });
+    renderSeen(r.seen || []); msg($('w-msg'), r.message, r.ok && r.seen.length ? 'ok' : 'bad');
+  } catch (e) { msg($('w-msg'), e.message, 'bad'); }
+  b.disabled = false;
+};
+function cleanHex(s) { return s.replace(/[\s:-]/g, '').toUpperCase(); }
+function updateLen() {
+  const h = cleanHex($('w-data').value);
+  const okHex = /^[0-9A-F]*$/.test(h);
+  $('w-len').textContent = h ? `${h.length * 4} bit${okHex && h.length % 4 === 0 ? '' : ' ⚠'}` : '';
+}
+$('w-data').oninput = updateLen;
+$('w-mem').onchange = () => { $('w-ptr-wrap').hidden = $('w-mem').value !== 'user'; };
+function incHex(h) {
+  const n = BigInt('0x' + h) + 1n;
+  return n.toString(16).toUpperCase().padStart(h.length, '0').slice(-h.length);
+}
+$('btn-write').onclick = async () => {
+  const data = cleanHex($('w-data').value);
+  if (!/^[0-9A-F]+$/.test(data) || data.length % 4) return msg($('w-msg'), 'Hex, multiple of 4 digits (e.g. 24 digits = 96 bit)', 'bad');
+  const pwd = cleanHex($('w-pwd').value || '00000000');
+  if (!/^[0-9A-F]{8}$/.test(pwd)) return msg($('w-msg'), 'Password = 8 hex digits', 'bad');
+  const b = $('btn-write'); b.disabled = true; msg($('w-msg'), t('working'));
+  const ant = Number($('w-ant').value);
+  try {
+    const power = await savePower();
+    const r = await api('/api/tag/write', { antenna: ant, power, target, mem: $('w-mem').value, word_ptr: Number($('w-ptr').value) || 0, data, password: pwd });
+    msg($('w-msg'), r.message, r.ok ? 'ok' : 'bad');
+    if (r.seen && r.seen.length && !r.ok) renderSeen(r.seen);
+    $('w-hist').insertAdjacentHTML('afterbegin', `<tr><td>${new Date().toLocaleTimeString()}</td><td>${ant}</td><td class="mono">${esc(target || '-')}</td><td class="mono">${esc(data)}</td><td>${r.ok ? '✓' : '✗ ' + esc(r.message)}</td></tr>`);
+    if (r.ok) {
+      if ($('w-mem').value === 'epc') { target = data; $('w-seen').innerHTML = ''; }
+      if ($('w-inc').checked) { $('w-data').value = incHex(data); target = ''; updateLen(); }
     }
-    async function closeMenuPage() {
-      if (isTransitioning) return;
-      isTransitioning = true;
-      const activePage = views.find((view) => !view.hidden && view.classList.contains('page'));
-      if (activePage) {
-        activePage.classList.add('panel-leaving');
-        await wait(PANEL_OUT_MS);
-        activePage.hidden = true;
-        activePage.classList.remove('panel-leaving');
+  } catch (e) { msg($('w-msg'), e.message, 'bad'); }
+  b.disabled = false;
+};
+
+// ---------- 3D view ----------
+const canvas = $('scene');
+const ctx = canvas.getContext('2d');
+const CAM0 = { yaw: -0.6, pitch: 0.6, dist: 6.5, px: 0, pz: 0 };
+const VIEWS = { '3d': CAM0, top: { yaw: 0, pitch: Math.PI / 2, dist: 7, px: 0, pz: 0 }, front: { yaw: 0, pitch: 0.02, dist: 7, px: 0, pz: 0 }, side: { yaw: -Math.PI / 2, pitch: 0.02, dist: 7, px: 0, pz: 0 } };
+const cam = { ...CAM0 };
+let live = [];
+const shown = new Map();   // epc -> {x,y,z} smoothed position
+let rssiSeen = { min: Infinity, max: -Infinity };
+$('rssi-near').value = store.get('rfid-rssi-near', '');
+$('rssi-far').value = store.get('rfid-rssi-far', '');
+$('rssi-auto').checked = store.get('rfid-rssi-auto', '1') === '1';
+$('rssi-auto').onchange = () => store.set('rfid-rssi-auto', $('rssi-auto').checked ? '1' : '0');
+$('rssi-near').onchange = () => { $('rssi-auto').checked = false; store.set('rfid-rssi-auto', '0'); store.set('rfid-rssi-near', $('rssi-near').value); };
+$('rssi-far').onchange = () => { $('rssi-auto').checked = false; store.set('rfid-rssi-auto', '0'); store.set('rfid-rssi-far', $('rssi-far').value); };
+
+function resizeScene() {
+  const r = canvas.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, r.width * dpr); canvas.height = Math.max(1, r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', () => { if (tab === '3d') resizeScene(); });
+let drag = null;
+const pointers = new Map();
+let pinchDist = 0;
+document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => Object.assign(cam, VIEWS[b.dataset.view]));
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('pointerdown', (e) => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  canvas.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey };
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinchDist = Math.hypot(a.x - b.x, a.y - b.y); }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchDist) cam.dist = Math.max(1.5, Math.min(40, cam.dist * pinchDist / d));
+    pinchDist = d; return;
+  }
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (drag.pan || e.shiftKey) {
+    // move the look-at point on the floor, relative to the current view direction
+    const k = cam.dist * 0.0022, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    cam.px -= (dx * cy + dy * sy) * k;
+    cam.pz -= (-dx * sy + dy * cy) * k;
+  } else {
+    cam.yaw += dx * 0.008;
+    // -80 deg (from below) .. 90 deg (straight down)
+    cam.pitch = Math.max(-1.4, Math.min(Math.PI / 2, cam.pitch + dy * 0.006));
+  }
+  drag = { ...drag, x: e.clientX, y: e.clientY };
+});
+const endPointer = (e) => { pointers.delete(e.pointerId); if (pointers.size < 2) pinchDist = 0; if (!pointers.size) drag = null; };
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', (e) => { e.preventDefault(); cam.dist = Math.max(1.5, Math.min(40, cam.dist * (e.deltaY > 0 ? 1.1 : 0.9))); }, { passive: false });
+canvas.addEventListener('dblclick', () => { Object.assign(cam, CAM0); });
+
+function antPos() {
+  const p = config ? config.positions : [-1, 1, 0, 1, 1, 0, -1, 1, 3, 1, 1, 3];
+  return [0, 1, 2, 3].map((i) => ({ x: p[i * 3], y: p[i * 3 + 1], z: p[i * 3 + 2] }));
+}
+function sceneCenter(ants) {
+  const c = ants.reduce((a, b) => ({ x: a.x + b.x / 4, y: a.y + b.y / 4, z: a.z + b.z / 4 }), { x: 0, y: 0, z: 0 });
+  return { x: c.x + cam.px, y: 0.6, z: c.z + cam.pz };
+}
+function project(p, center, w, h) {
+  const x0 = p.x - center.x, y0 = p.y - center.y, z0 = p.z - center.z;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const x1 = x0 * cy - z0 * sy, z1 = x0 * sy + z0 * cy;
+  const y2 = y0 * cp - z1 * sp, z2 = y0 * sp + z1 * cp;
+  const depth = cam.dist + z2;
+  const f = Math.min(w, h) * 1.25 / Math.max(0.3, depth);
+  return { x: w / 2 + x1 * f, y: h / 2 - y2 * f, s: f, d: depth, vis: depth > 0.3 };
+}
+function hash(s) { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967295; }
+function rssiRange() {
+  if ($('rssi-auto').checked && rssiSeen.max > -Infinity) {
+    const far = rssiSeen.min, near = Math.max(rssiSeen.max, rssiSeen.min + 10);
+    $('rssi-near').value = Math.round(near); $('rssi-far').value = Math.round(far);
+    return { near, far };
+  }
+  const near = Number($('rssi-near').value), far = Number($('rssi-far').value);
+  return near !== far && !isNaN(near) && !isNaN(far) ? { near, far } : { near: 80, far: 30 };
+}
+// strength 0..1 (1 = near) -> metres
+const MIN_D = 0.2, MAX_D = 3;
+const DEG = Math.PI / 180;
+function antDir(i) {
+  const y = cfgArr('yaw', i) * DEG, t = cfgArr('tilt', i) * DEG;
+  return { x: Math.sin(y) * Math.cos(t), y: Math.sin(t), z: Math.cos(y) * Math.cos(t) };
+}
+function estimate(tag, ants, range) {
+  const obs = [];
+  let best = null;
+  tag.ant.forEach((a, i) => {
+    if (!a) return;
+    const s = Math.max(0, Math.min(1, (a.avg - range.far) / (range.near - range.far)));
+    const d = MIN_D + (1 - s) * (MAX_D - MIN_D);
+    const dir = antDir(i);
+    const o = { i, s, d, dir, pos: ants[i], half: cfgArr('beam', i) * DEG / 2, w: 0.05 + s * s };
+    obs.push(o);
+    if (!best || s > best.s) best = { i, s, d, rssi: a.avg };
+  });
+  if (!best) return null;
+  // start: weighted mean of "distance d along each antenna's axis"
+  let p = { x: 0, y: 0, z: 0 }, ws = 0;
+  for (const o of obs) { p.x += (o.pos.x + o.dir.x * o.d) * o.w; p.y += (o.pos.y + o.dir.y * o.d) * o.w; p.z += (o.pos.z + o.dir.z * o.d) * o.w; ws += o.w; }
+  p = { x: p.x / ws, y: p.y / ws, z: p.z / ws };
+  // refine (needs 2+ antennas): match each distance, stay inside each beam
+  if (obs.length > 1) {
+    for (let it = 0; it < 40; it++) {
+      const g = { x: 0, y: 0, z: 0 };
+      for (const o of obs) {
+        const v = { x: p.x - o.pos.x, y: p.y - o.pos.y, z: p.z - o.pos.z };
+        const r = Math.hypot(v.x, v.y, v.z) || 1e-6;
+        const u = { x: v.x / r, y: v.y / r, z: v.z / r };
+        const e = (r - o.d) * o.w;                       // distance error
+        g.x += e * u.x; g.y += e * u.y; g.z += e * u.z;
+        const cos = u.x * o.dir.x + u.y * o.dir.y + u.z * o.dir.z;
+        if (Math.acos(Math.max(-1, Math.min(1, cos))) > o.half) {  // outside the beam: pull towards the axis
+          const k = 0.5 * o.w;
+          g.x += k * (u.x - o.dir.x); g.y += k * (u.y - o.dir.y); g.z += k * (u.z - o.dir.z);
+        }
       }
-      mainImage.classList.remove('hero-fade-in');
-      mainImage.classList.add('hero-zoom-out');
-      await wait(ZOOM_OUT_MS);
-      mainImage.src = HOME_IMAGE;
-      mainImage.classList.remove('hero-zoom-out');
-      mainImage.classList.add('hero-fade-in');
-      await wait(FADE_IN_MS);
-      mainImage.classList.remove('hero-fade-in');
-      document.getElementById('home-page').hidden = false;
-      navMenu.hidden = false;
-      menuButtons.forEach((button) => button.classList.remove('active'));
-      isTransitioning = false;
+      p.x -= g.x * 0.25; p.y -= g.y * 0.25; p.z -= g.z * 0.25;
     }
-    menuButtons.forEach((button) => button.addEventListener('click', () => openMenuPage(button.dataset.page, button.dataset.image || HOME_IMAGE)));
-    backButtons.forEach((button) => button.addEventListener('click', () => closeMenuPage()));
-    const workspace = document.querySelector('.workspace');
-    function updateScene(event) { if (window.innerWidth <= 760) return; const x = event.clientX / window.innerWidth - .5; const y = event.clientY / window.innerHeight - .5; const page = [...views].find((view) => !view.hidden && view.classList.contains('page')); const panelDirection = page && page.id === 'status-page' ? -1 : 1; document.documentElement.style.setProperty('--scene-x', `${x * -12}px`); document.documentElement.style.setProperty('--scene-y', `${y * -8}px`); workspace.style.setProperty('--image-x', `${x * -50}px`); workspace.style.setProperty('--image-y', `${y * -34}px`); workspace.style.setProperty('--image-rx', `${y * -4}deg`); workspace.style.setProperty('--image-ry', `${x * 5}deg`); workspace.style.setProperty('--panel-x', `${x * panelDirection * 8}px`); workspace.style.setProperty('--panel-y', `${y * 6}px`); workspace.style.setProperty('--panel-rx', `${y * -2}deg`); workspace.style.setProperty('--panel-ry', `${x * panelDirection * 3}deg`); }
-    window.addEventListener('mousemove', updateScene);
-    window.addEventListener('blur', () => { ['--scene-x', '--scene-y'].forEach((property) => document.documentElement.style.removeProperty(property)); ['--image-x', '--image-y', '--image-rx', '--image-ry', '--panel-x', '--panel-y', '--panel-rx', '--panel-ry'].forEach((property) => workspace.style.removeProperty(property)); });
-    async function loadNetwork() { const message = document.getElementById('network-message'); try { const response = await fetch('/api/get-ip', {cache:'no-store'}); const data = await response.json(); document.getElementById('ip').value = data.ip || ''; document.getElementById('gateway').value = data.gateway || ''; message.textContent = 'Network connected'; } catch (error) { message.textContent = 'Network API unavailable'; } }
-    async function saveNetwork() { const message = document.getElementById('network-message'); try { const response = await fetch('/api/update_network', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ip:document.getElementById('ip').value.trim(), gateway:document.getElementById('gateway').value.trim()})}); const data = await response.json(); message.textContent = data.message || 'Save failed'; } catch (error) { message.textContent = 'Network API unavailable'; } }
-    async function saveAntennaSettings() { const message = document.getElementById('antenna-message'); const power = Number(document.getElementById('read-power').value); if (!Number.isInteger(power) || power < 0 || power > 40) { message.textContent = 'Power must be between 0 and 40 dBm'; return; } try { const response = await fetch('/api/antenna-power', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({power})}); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Power update failed'); document.getElementById('write-power').value = power; message.textContent = `${data.message} (${power} dBm)`; } catch (error) { message.textContent = error.message || 'Antenna API unavailable'; } }
-    async function loadLog() { const body = document.getElementById('status-log'); const antenna = document.getElementById('log-antenna').value; try { const response = await fetch('/api/status-log?antenna=' + encodeURIComponent(antenna), {cache:'no-store'}); const data = await response.json(); body.innerHTML = (data.readings || []).map((item) => `<tr><td>${item.timestamp || '-'}</td><td>${item.antenna || '-'}</td><td>${item.epc || '-'}</td><td>${item.rssi ?? '-'}</td><td>${item.count ?? 1}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No readings yet</td></tr>'; } catch (error) { body.innerHTML = '<tr><td colspan="5" class="muted">Status API unavailable</td></tr>'; } }
-    async function loadScanStatus() { try { const response = await fetch('/api/scan-status', {cache:'no-store'}); const data = await response.json(); const panel = document.getElementById('buffer-panel'); const status = document.getElementById('buffer-status'); const rate = document.getElementById('buffer-rate'); const button = document.getElementById('view-buffer-log'); const active = data.scanning === true && data.mode === 'buffer'; status.textContent = active ? 'Running' : data.scanning ? 'Running (normal)' : 'Stopped'; status.classList.toggle('buffer-active', active); panel.classList.toggle('running', active); rate.textContent = active ? '1 sec / 800 tags' : data.buffer_log_available ? 'Stopped - log ready' : 'Not active'; button.hidden = !data.buffer_log_available || active; } catch (error) { document.getElementById('buffer-status').textContent = 'Unavailable'; } }
-    async function loadBufferLog() { const body = document.getElementById('status-log'); try { const response = await fetch('/api/buffer-log', {cache:'no-store'}); const data = await response.json(); body.innerHTML = (data.readings || []).map((item) => `<tr><td>${item.timestamp || '-'}</td><td>${item.antenna || '-'}</td><td>${item.epc || '-'}</td><td>${item.rssi ?? '-'}</td><td>${item.count ?? 1}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No Buffer readings</td></tr>'; document.getElementById('log-view').hidden = false; document.getElementById('clear-buffer-log').hidden = false; document.getElementById('back-buffer-log').hidden = false; } catch (error) { body.innerHTML = '<tr><td colspan="5" class="muted">Buffer log unavailable</td></tr>'; } }
-    async function clearBufferLog() { try { const response = await fetch('/api/buffer-clear', {method:'POST'}); if (!response.ok) throw new Error('Clear failed'); document.getElementById('status-log').innerHTML = '<tr><td colspan="5" class="muted">Buffer log cleared</td></tr>'; document.getElementById('view-buffer-log').hidden = true; document.getElementById('clear-buffer-log').hidden = true; } catch (error) { document.getElementById('status-message').textContent = error.message || 'Buffer API unavailable'; } }
-    function closeBufferLog() { document.getElementById('log-view').hidden = true; document.getElementById('clear-buffer-log').hidden = true; document.getElementById('back-buffer-log').hidden = true; document.getElementById('view-buffer-log').hidden = false; }
-    async function clearLog() { const message = document.getElementById('status-message'); try { const response = await fetch('/api/status-clear', {method:'POST'}); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Clear failed'); message.textContent = data.message || 'Status log cleared'; await loadLog(); } catch (error) { message.textContent = error.message || 'Status API unavailable'; } }
-    async function loadStatus() { try { const response = await fetch('/api/antenna-status', {cache:'no-store'}); const data = await response.json(); const message = document.getElementById('status-message'); if (message) message.textContent = data.source === 'reader' ? 'Reader connected' : 'Reader unavailable'; (data.antennas || []).forEach((item) => { const dots = document.querySelectorAll(`[data-status-dot="${item.id}"]`); const labels = document.querySelectorAll(`[data-status-label="${item.id}"]`); dots.forEach((dot) => dot.classList.toggle('green-dot', item.detected === true)); labels.forEach((label) => { label.textContent = item.detected ? 'Detected' : 'No RFID'; }); }); } catch (error) { const message = document.getElementById('status-message'); if (message) message.textContent = 'Status API unavailable'; } }
-    async function setScan(action) { const message = document.getElementById('scan-message'); const mode = document.getElementById('scan-mode').value; try { const response = await fetch('/api/scan-control', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, mode})}); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Scan command failed'); message.textContent = action === 'start' ? `Scanning (${mode})` : 'Scan stopped'; loadScanStatus(); if (action === 'stop' && mode !== 'buffer') { document.getElementById('log-view').hidden = false; document.getElementById('view-log').hidden = true; document.getElementById('refresh-log').hidden = false; document.getElementById('clear-log').hidden = false; loadLog(); } } catch (error) { message.textContent = error.message || 'Scan API unavailable'; } }
-    window.setInterval(() => { if (!document.getElementById('status-page').hidden) { loadStatus(); loadScanStatus(); } else if (!document.getElementById('antenna-page').hidden) loadStatus(); }, 100);
-    document.getElementById('start-scan').addEventListener('click', () => setScan('start')); document.getElementById('stop-scan').addEventListener('click', () => setScan('stop')); document.getElementById('refresh-network').addEventListener('click', loadNetwork); document.getElementById('save-network').addEventListener('click', saveNetwork); document.getElementById('save-antenna-settings').addEventListener('click', saveAntennaSettings); document.getElementById('view-log').addEventListener('click', () => { document.getElementById('log-view').hidden = false; document.getElementById('view-log').hidden = true; document.getElementById('refresh-log').hidden = false; document.getElementById('clear-log').hidden = false; loadLog(); }); document.getElementById('view-buffer-log').addEventListener('click', loadBufferLog); document.getElementById('clear-buffer-log').addEventListener('click', clearBufferLog); document.getElementById('back-buffer-log').addEventListener('click', closeBufferLog); document.getElementById('refresh-log').addEventListener('click', loadLog); document.getElementById('clear-log').addEventListener('click', clearLog); document.getElementById('log-antenna').addEventListener('change', () => { if (!document.getElementById('log-view').hidden) loadLog(); });
-  </script>
+  }
+  // Height: the stronger an antenna hears the tag, the closer the tag is to
+  // that antenna's mounting height. Blend with the geometric solution.
+  let hy = 0, hw = 0;
+  for (const o of obs) { const w = 0.02 + o.s * o.s * o.s; hy += (o.pos.y + o.dir.y * o.d) * w; hw += w; }
+  const heights = new Set(obs.map((o) => o.pos.y.toFixed(2)));
+  const y = heights.size > 1 ? 0.5 * p.y + 0.5 * hy / hw : p.y;
+  const j1 = hash(tag.epc) - 0.5, j2 = hash(tag.epc + 'z') - 0.5;  // small horizontal spread only
+  return { x: p.x + j1 * 0.25, y: Math.max(0, Math.min(3, y)), z: p.z + j2 * 0.2, best };
+}
+// Walking direction from which gate saw the tag first in this pass.
+const dirs = new Map();  // epc -> {dir: 'AB'|'BA', at}
+function passDirection(tag) {
+  const start = (idx) => { let m = -1; for (const i of idx) { const a = tag.ant[i]; if (a && a.first !== undefined) m = Math.max(m, a.first); } return m; };
+  const a = start([0, 1]), b = start([2, 3]);  // ms since first seen (bigger = earlier)
+  if (a >= 0 && b >= 0 && Math.abs(a - b) > 150) dirs.set(tag.epc, { dir: a > b ? 'AB' : 'BA', at: Date.now() });
+  const d = dirs.get(tag.epc);
+  return d && Date.now() - d.at < 60000 ? d.dir : '';
+}
+function dirLabel(dir) {
+  if (!dir) return '';
+  const abIn = $('dir-map').value === 'in';
+  const isIn = dir === 'AB' ? abIn : !abIn;
+  return `${t(dir === 'AB' ? 'dirAB' : 'dirBA')} · ${t(isIn ? 'dirIn' : 'dirOut')}`;
+}
+$('dir-map').value = store.get('rfid-dir-map', 'in');
+$('dir-map').onchange = () => store.set('rfid-dir-map', $('dir-map').value);
+$('show-beam').checked = store.get('rfid-show-beam', '1') === '1';
+$('show-beam').onchange = () => store.set('rfid-show-beam', $('show-beam').checked ? '1' : '0');
+const LEVEL_BAND = 0.15;  // +-m around the split = unsure
+function levelSplit() { return config && config.level_split !== undefined ? config.level_split : 1.1; }
+function levelOf(y) {
+  const sp = levelSplit();
+  if (y > sp + LEVEL_BAND) return 'up';
+  if (y < sp - LEVEL_BAND) return 'down';
+  return 'unsure';
+}
+const LEVEL_COLOR = { up: '#2563eb', down: '#d97706', unsure: '#94a3b8' };
+function levelText(lv) { return t(lv === 'up' ? 'lvUp' : lv === 'down' ? 'lvDown' : 'lvUnsure'); }
+function syncLevelInput() { if (document.activeElement !== $('level-split')) $('level-split').value = levelSplit(); }
+$('level-split').onchange = async () => {
+  const v = Number($('level-split').value);
+  if (isNaN(v)) return;
+  try { const r = await api('/api/config', { level_split: v }); if (r.config) config = r.config; } catch {}
+};
+$('show-level').checked = store.get('rfid-show-level', '1') === '1';
+$('show-level').onchange = () => store.set('rfid-show-level', $('show-level').checked ? '1' : '0');
+function convexHull(pts) {
+  const p = pts.map((q) => ({ x: q.x, y: q.y })).sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [], upper = [];
+  for (const q of p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop(); lower.push(q); }
+  for (const q of p.reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop(); upper.push(q); }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+function nearColor(s) { const h = 0 + s * 130; return `hsl(${h} 80% 48%)`; }
+
+function draw() {
+  requestAnimationFrame(draw);
+  if (tab !== '3d') return;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w) return;
+  const css = getComputedStyle(document.documentElement);
+  const lineC = css.getPropertyValue('--line').trim(), mutedC = css.getPropertyValue('--muted').trim(), textC = css.getPropertyValue('--text').trim();
+  ctx.clearRect(0, 0, w, h);
+  const ants = antPos(), center = sceneCenter(ants);
+  const P = (p) => project(p, center, w, h);
+
+  // floor grid
+  ctx.lineWidth = 1; ctx.strokeStyle = lineC;
+  const gx0 = Math.floor(center.x - 4), gx1 = Math.ceil(center.x + 4), gz0 = Math.floor(center.z - 4), gz1 = Math.ceil(center.z + 4);
+  ctx.beginPath();
+  const seg = (p, q) => { const a = P(p), b = P(q); if (a.vis && b.vis) { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); } };
+  for (let x = gx0; x <= gx1; x++) for (let z = gz0; z < gz1; z++) seg({ x, y: 0, z }, { x, y: 0, z: z + 1 });
+  for (let z = gz0; z <= gz1; z++) for (let x = gx0; x < gx1; x++) seg({ x, y: 0, z }, { x: x + 1, y: 0, z });
+  ctx.stroke();
+
+  // gates
+  ctx.strokeStyle = mutedC; ctx.setLineDash([6, 5]);
+  [[0, 1], [2, 3]].forEach(([a, b]) => { const p = P({ ...ants[a], y: 0 }), q = P({ ...ants[b], y: 0 }); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); });
+  ctx.setLineDash([]);
+
+  // level split plane + height ruler
+  if ($('show-level').checked) {
+    syncLevelInput();
+    const sp = levelSplit();
+    const xs = ants.map((a) => a.x), zs = ants.map((a) => a.z);
+    const x0 = Math.min(...xs) - 1, x1 = Math.max(...xs) + 1, z0 = Math.min(...zs) - 1, z1 = Math.max(...zs) + 1;
+    const corners = [P({ x: x0, y: sp, z: z0 }), P({ x: x1, y: sp, z: z0 }), P({ x: x1, y: sp, z: z1 }), P({ x: x0, y: sp, z: z1 })];
+    if (corners.every((q) => q.vis)) {
+      ctx.fillStyle = '#64748b'; ctx.globalAlpha = 0.07;
+      ctx.beginPath(); corners.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.5; ctx.strokeStyle = mutedC; ctx.setLineDash([8, 6]); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.fillStyle = mutedC; ctx.font = '600 11px system-ui';
+      ctx.fillText(`${t('lvUp')} ▲  ${sp.toFixed(2)} m  ▼ ${t('lvDown')}`, corners[0].x + 6, corners[0].y - 6);
+    }
+    // ruler at the (x0, z0) corner
+    const top = Math.max(2.5, ...ants.map((a) => a.y + 0.3));
+    const r0 = P({ x: x0, y: 0, z: z0 }), r1 = P({ x: x0, y: top, z: z0 });
+    if (r0.vis && r1.vis) {
+      ctx.strokeStyle = mutedC; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(r0.x, r0.y); ctx.lineTo(r1.x, r1.y); ctx.stroke();
+      ctx.font = '10px system-ui'; ctx.fillStyle = mutedC;
+      for (let hgt = 0; hgt <= top + 1e-6; hgt += 0.5) {
+        const q = P({ x: x0, y: hgt, z: z0 }), q2 = P({ x: x0 - 0.12, y: hgt, z: z0 });
+        ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q2.x, q2.y); ctx.stroke();
+        ctx.fillText(hgt.toFixed(1), q2.x - 22, q2.y + 3);
+      }
+    }
+  }
+
+  // beam cones
+  if ($('show-beam').checked) {
+    ants.forEach((a, i) => {
+      if (config && !config.enabled[i]) return;
+      const d = antDir(i), half = cfgArr('beam', i) * DEG / 2, L = MAX_D, R = Math.tan(Math.min(half, 1.4)) * L;
+      // two vectors perpendicular to the axis
+      let u = Math.abs(d.y) < 0.9 ? { x: d.z, y: 0, z: -d.x } : { x: 1, y: 0, z: 0 };
+      const ul = Math.hypot(u.x, u.y, u.z); u = { x: u.x / ul, y: u.y / ul, z: u.z / ul };
+      const v = { x: d.y * u.z - d.z * u.y, y: d.z * u.x - d.x * u.z, z: d.x * u.y - d.y * u.x };
+      const tip = P(a); if (!tip.vis) return;
+      const ring = [];
+      for (let k = 0; k <= 24; k++) {
+        const th = k / 24 * Math.PI * 2, c = Math.cos(th) * R, sn = Math.sin(th) * R;
+        ring.push(P({ x: a.x + d.x * L + u.x * c + v.x * sn, y: a.y + d.y * L + u.y * c + v.y * sn, z: a.z + d.z * L + u.z * c + v.z * sn }));
+      }
+      if (ring.some((q) => !q.vis)) return;
+      const hull = convexHull([tip, ...ring]);
+      ctx.fillStyle = ANT_HEX[i]; ctx.globalAlpha = 0.07;
+      ctx.beginPath(); hull.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.4; ctx.strokeStyle = ANT_HEX[i]; ctx.lineWidth = 1; ctx.stroke();
+      ctx.globalAlpha = 0.2; ctx.beginPath(); ring.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.stroke();
+      ctx.globalAlpha = 0.4;
+      const axisEnd = P({ x: a.x + d.x * L, y: a.y + d.y * L, z: a.z + d.z * L });
+      ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(axisEnd.x, axisEnd.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  const range = rssiRange();
+  const items = [];
+  const nowList = [];
+  for (const tag of live) {
+    const e = estimate(tag, ants, range); if (!e) continue;
+    const prev = shown.get(tag.epc) || e;
+    const cur = { x: prev.x + (e.x - prev.x) * 0.2, y: prev.y + (e.y - prev.y) * 0.2, z: prev.z + (e.z - prev.z) * 0.2 };
+    shown.set(tag.epc, cur);
+    const dir = passDirection(tag);
+    const lv = levelOf(cur.y);
+    nowList.push({ epc: tag.epc, best: e.best, ant: tag.ant, dir, y: cur.y, lv });
+    items.push({ type: 'tag', pos: cur, epc: tag.epc, best: e.best, dir, lv, p: P(cur) });
+  }
+  ants.forEach((a, i) => items.push({ type: 'ant', i, pos: a, p: P(a) }));
+  items.sort((a, b) => b.p.d - a.p.d);
+
+  for (const it of items) {
+    if (!it.p.vis) continue;
+    if (it.type === 'ant') {
+      const on = !config || config.enabled[it.i];
+      const base = P({ ...it.pos, y: 0 });
+      ctx.strokeStyle = ANT_HEX[it.i]; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(it.p.x, it.p.y); ctx.stroke();
+      const sz = Math.max(8, it.p.s * 0.22);
+      ctx.fillStyle = on ? ANT_HEX[it.i] : mutedC; ctx.globalAlpha = on ? 1 : 0.4;
+      ctx.fillRect(it.p.x - sz / 2, it.p.y - sz * 0.7, sz, sz * 1.4);
+      ctx.globalAlpha = 1; ctx.fillStyle = textC; ctx.font = '600 12px system-ui';
+      ctx.fillText('A' + (it.i + 1) + '  ' + it.pos.y.toFixed(2) + ' m', it.p.x + sz / 2 + 4, it.p.y - sz * 0.4);
+      const det = state && state.antennas && state.antennas[it.i] && state.antennas[it.i].detected;
+      if (det) { ctx.strokeStyle = ANT_HEX[it.i]; ctx.globalAlpha = 0.35 + 0.3 * Math.sin(Date.now() / 150); ctx.beginPath(); ctx.arc(it.p.x, it.p.y, sz * 1.4, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
+    } else {
+      const a = ants[it.best.i];
+      const ap = P(a);
+      ctx.strokeStyle = ANT_HEX[it.best.i]; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(ap.x, ap.y); ctx.lineTo(it.p.x, it.p.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      const shadow = P({ ...it.pos, y: 0 });
+      ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(shadow.x, shadow.y, it.p.s * 0.08, it.p.s * 0.03, 0, 0, 7); ctx.fill();
+      const r = Math.max(6, it.p.s * 0.1);
+      const g = ctx.createRadialGradient(it.p.x - r / 3, it.p.y - r / 3, r / 5, it.p.x, it.p.y, r);
+      g.addColorStop(0, '#fff'); g.addColorStop(0.35, nearColor(it.best.s)); g.addColorStop(1, nearColor(it.best.s));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(it.p.x, it.p.y, r, 0, 7); ctx.fill();
+      if ($('show-level').checked && shadow.vis) {  // height stem to the floor
+        ctx.strokeStyle = LEVEL_COLOR[it.lv]; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(shadow.x, shadow.y); ctx.lineTo(it.p.x, it.p.y + r); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+      let lx = it.p.x + r + 3;
+      if ($('show-epc').checked) { ctx.fillStyle = textC; ctx.font = '11px ui-monospace, monospace'; const txt = '…' + it.epc.slice(-6); ctx.fillText(txt, lx, it.p.y + 4); lx += ctx.measureText(txt).width + 5; }
+      if ($('show-level').checked) {
+        const txt = levelText(it.lv) + ' ' + it.pos.y.toFixed(1) + 'm';
+        ctx.font = '600 10px system-ui'; const tw = ctx.measureText(txt).width;
+        ctx.fillStyle = LEVEL_COLOR[it.lv]; ctx.beginPath(); ctx.roundRect(lx, it.p.y - 7, tw + 8, 14, 4); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText(txt, lx + 4, it.p.y + 4);
+      }
+      if (it.dir) {  // arrow along the passage
+        const g1 = { x: (ants[0].x + ants[1].x) / 2, z: (ants[0].z + ants[1].z) / 2 }, g2 = { x: (ants[2].x + ants[3].x) / 2, z: (ants[2].z + ants[3].z) / 2 };
+        let dx = g2.x - g1.x, dz = g2.z - g1.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+        if (it.dir === 'BA') { dx = -dx; dz = -dz; }
+        const from = P({ x: it.pos.x - dx * 0.3, y: it.pos.y + 0.35, z: it.pos.z - dz * 0.3 }), to = P({ x: it.pos.x + dx * 0.3, y: it.pos.y + 0.35, z: it.pos.z + dz * 0.3 });
+        if (from.vis && to.vis) {
+          const ang = Math.atan2(to.y - from.y, to.x - from.x);
+          ctx.strokeStyle = textC; ctx.fillStyle = textC; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(to.x, to.y); ctx.lineTo(to.x - 8 * Math.cos(ang - 0.5), to.y - 8 * Math.sin(ang - 0.5)); ctx.lineTo(to.x - 8 * Math.cos(ang + 0.5), to.y - 8 * Math.sin(ang + 0.5)); ctx.fill();
+        }
+      }
+    }
+  }
+  if (!live.length) { ctx.fillStyle = mutedC; ctx.font = '14px system-ui'; ctx.textAlign = 'center'; ctx.fillText(t('noTags3d'), w / 2, 28); ctx.textAlign = 'start'; }
+  for (const k of shown.keys()) if (!live.some((x) => x.epc === k)) shown.delete(k);
+  renderNearList(nowList);
+}
+let lastListRender = 0;
+function renderNearList(list) {
+  if (Date.now() - lastListRender < 400) return;
+  lastListRender = Date.now();
+  if (!list.length) { $('near-list').innerHTML = `<p class="muted">${t('noTags3d')}</p>`; return; }
+  list.sort((a, b) => b.best.s - a.best.s);
+  $('near-list').innerHTML = list.map((x) => {
+    const per = x.ant.map((a, i) => a ? `<span class="tag-a" style="background:${ANT_HEX[i]}">${i + 1}</span> ${Math.round(a.avg)}` : '').filter(Boolean).join(' &nbsp;');
+    return `<div class="near-item"><span class="mono">${esc(x.epc)}</span><b>~${x.best.d.toFixed(1)} m</b>
+      <span style="grid-column:1/-1;font-size:12px"><span class="tag-a" style="width:auto;padding:0 6px;background:${LEVEL_COLOR[x.lv]}">${esc(levelText(x.lv))}</span> <span class="muted">${t('height')} ~${x.y.toFixed(2)} m</span></span>
+      <span class="muted" style="grid-column:1/-1">${per}${x.dir ? ' &nbsp;<b>' + esc(dirLabel(x.dir)) + '</b>' : ''}</span>
+      <span class="bar"><i style="width:${Math.round(x.best.s * 100)}%;background:${nearColor(x.best.s)}"></i></span></div>`;
+  }).join('');
+}
+async function pollLive() {
+  if (tab === '3d') {
+    try {
+      const d = await api('/api/live?window=' + $('win').value);
+      live = d.tags || [];
+      for (const tag of live) for (const a of tag.ant) if (a) { rssiSeen.min = Math.min(rssiSeen.min, a.avg); rssiSeen.max = Math.max(rssiSeen.max, a.avg); }
+    } catch { live = []; }
+  }
+  setTimeout(pollLive, 300);
+}
+
+// ---------- boot ----------
+applyLang();
+pollState();
+loadConfig();
+loadLog();
+pollLive();
+requestAnimationFrame(draw);
+</script>
 </body>
 </html>
